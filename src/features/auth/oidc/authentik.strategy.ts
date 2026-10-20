@@ -15,6 +15,15 @@ interface AuthentikProfile {
   sub?: string;
   email?: string;
   emails?: Array<{ value: string }>;
+  displayName?: string;
+  name?: { givenName?: string; familyName?: string };
+}
+
+interface AuthentikIdentity {
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string | null;
 }
 
 interface OpenIdConfiguration {
@@ -146,23 +155,75 @@ export class AuthentikStrategy
       throw new UnauthorizedException('Email not provided by Authentik');
     }
 
-    let user = await this.usersRepository.findByEmail(email);
+    const identity: AuthentikIdentity = {
+      email,
+      firstName: profile?.name?.givenName?.trim() || null,
+      lastName: profile?.name?.familyName?.trim() || null,
+      displayName: profile?.displayName?.trim() || null,
+    };
 
-    if (!user) {
-      user = await this.usersRepository.create({
+    // Сначала ищем по стабильному идентификатору Authentik (sub): если почта
+    // или имя изменились на стороне IdP, аккаунт найдётся по sub и получит
+    // свежие данные, а не продублируется под новой почтой.
+    const linked =
+      (sub ? await this.usersRepository.findByProvider('authentik', sub) : null) ??
+      (await this.usersRepository.findByEmail(email));
+
+    if (!linked) {
+      return this.usersRepository.create({
         email,
         passwordHash: null,
         provider: 'authentik',
-        providerSub: sub,
+        providerSub: sub ?? null,
+        firstName: identity.firstName,
+        lastName: identity.lastName,
+        displayName: identity.displayName,
       });
-    } else if (user.provider !== 'authentik' || user.providerSub !== sub) {
-      // Почта совпала — входим в уже существующий аккаунт (например,
-      // зарегистрированный по паролю) и привязываем его к Authentik.
-      user.provider = user.provider === 'local' ? 'authentik' : user.provider;
-      user.providerSub = user.providerSub || sub || null;
-      await this.usersRepository.save(user);
     }
 
-    return user;
+    let dirty = false;
+
+    // Привязка: почта совпала — входим в существующий аккаунт (например,
+    // зарегистрированный по паролю) и связываем его с Authentik.
+    const provider = linked.provider === 'local' ? 'authentik' : linked.provider;
+    const providerSub = linked.providerSub || sub || null;
+    if (provider !== linked.provider || providerSub !== linked.providerSub) {
+      linked.provider = provider;
+      linked.providerSub = providerSub;
+      dirty = true;
+    }
+
+    // Синхронизация устаревших данных: Authentik — источник истины по почте
+    // и ФИО, обновляем при каждом входе.
+    if (identity.email !== linked.email) {
+      const owner = await this.usersRepository.findByEmail(identity.email);
+      if (owner && owner.id !== linked.id) {
+        this.logger.warn(
+          `Authentik: почта ${identity.email} уже занята другим аккаунтом — ` +
+            `не обновляем email у user=${linked.id} (остаётся ${linked.email})`,
+        );
+      } else {
+        linked.email = identity.email;
+        dirty = true;
+      }
+    }
+    if (identity.firstName && identity.firstName !== linked.firstName) {
+      linked.firstName = identity.firstName;
+      dirty = true;
+    }
+    if (identity.lastName && identity.lastName !== linked.lastName) {
+      linked.lastName = identity.lastName;
+      dirty = true;
+    }
+    if (identity.displayName && identity.displayName !== linked.displayName) {
+      linked.displayName = identity.displayName;
+      dirty = true;
+    }
+
+    if (dirty) {
+      await this.usersRepository.save(linked);
+    }
+
+    return linked;
   }
 }

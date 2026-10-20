@@ -27,6 +27,15 @@ export class User {
   @Column({ type: 'varchar', length: 255, name: 'provider_sub', nullable: true })
   providerSub: string | null;
 
+  @Column({ type: 'varchar', length: 255, name: 'first_name', nullable: true })
+  firstName: string | null;
+
+  @Column({ type: 'varchar', length: 255, name: 'last_name', nullable: true })
+  lastName: string | null;
+
+  @Column({ type: 'varchar', length: 255, name: 'display_name', nullable: true })
+  displayName: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

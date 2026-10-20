@@ -19,6 +19,7 @@ function createConfigServiceMock() {
 function createUsersRepositoryMock() {
   return {
     findByEmail: vi.fn(),
+    findByProvider: vi.fn(),
     create: vi.fn(),
     save: vi.fn(),
   };
@@ -33,6 +34,7 @@ describe('AuthentikStrategy', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    usersRepository.findByProvider.mockResolvedValue(null);
   });
 
   it('creates a new Authentik user with a normalized email', async () => {
@@ -44,8 +46,14 @@ describe('AuthentikStrategy', () => {
     const user = await strategy.validate('http://idp.test/', {
       id: 'sub-1',
       emails: [{ value: 'New@Example.com' }],
+      displayName: 'Иванов Иван Иванович',
+      name: { givenName: 'Иван', familyName: 'Иванов' },
     });
 
+    expect(usersRepository.findByProvider).toHaveBeenCalledWith(
+      'authentik',
+      'sub-1',
+    );
     expect(usersRepository.findByEmail).toHaveBeenCalledWith(
       'new@example.com',
     );
@@ -54,6 +62,9 @@ describe('AuthentikStrategy', () => {
       passwordHash: null,
       provider: 'authentik',
       providerSub: 'sub-1',
+      firstName: 'Иван',
+      lastName: 'Иванов',
+      displayName: 'Иванов Иван Иванович',
     });
     expect(user.id).toBe('user-1');
   });
@@ -65,6 +76,9 @@ describe('AuthentikStrategy', () => {
       passwordHash: 'local-password-hash',
       provider: 'local',
       providerSub: null,
+      firstName: null,
+      lastName: null,
+      displayName: null,
     };
     usersRepository.findByEmail.mockResolvedValue(existing);
     usersRepository.save.mockImplementation(async (user) => user);
@@ -72,6 +86,7 @@ describe('AuthentikStrategy', () => {
     const user = await strategy.validate('http://idp.test/', {
       id: 'sub-9',
       email: 'Test@Example.com',
+      name: { givenName: 'Пётр' },
     });
 
     expect(usersRepository.findByEmail).toHaveBeenCalledWith(
@@ -82,6 +97,7 @@ describe('AuthentikStrategy', () => {
     expect(user.provider).toBe('authentik');
     expect(user.providerSub).toBe('sub-9');
     expect(user.passwordHash).toBe('local-password-hash');
+    expect(user.firstName).toBe('Пётр');
   });
 
   it('does not touch an already linked account', async () => {
@@ -91,13 +107,100 @@ describe('AuthentikStrategy', () => {
       passwordHash: null,
       provider: 'authentik',
       providerSub: 'sub-3',
+      firstName: 'Иван',
+      lastName: 'Иванов',
+      displayName: 'Иванов Иван',
     };
-    usersRepository.findByEmail.mockResolvedValue(linked);
+    usersRepository.findByProvider.mockResolvedValue(linked);
 
     await expect(
-      strategy.validate('http://idp.test/', { id: 'sub-3', email: 'a@b.c' }),
+      strategy.validate('http://idp.test/', {
+        id: 'sub-3',
+        email: 'a@b.c',
+        name: { givenName: 'Иван', familyName: 'Иванов' },
+        displayName: 'Иванов Иван',
+      }),
     ).resolves.toEqual(linked);
+    expect(usersRepository.findByEmail).not.toHaveBeenCalled();
     expect(usersRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('finds the account by sub after an email change in Authentik', async () => {
+    const linked = {
+      id: 'user-4',
+      email: 'old@example.com',
+      passwordHash: null,
+      provider: 'authentik',
+      providerSub: 'sub-4',
+      firstName: 'Иван',
+      lastName: null,
+      displayName: null,
+    };
+    usersRepository.findByProvider.mockResolvedValue(linked);
+    usersRepository.findByEmail.mockResolvedValue(null);
+    usersRepository.save.mockImplementation(async (user) => user);
+
+    const user = await strategy.validate('http://idp.test/', {
+      id: 'sub-4',
+      email: 'new@example.com',
+    });
+
+    expect(usersRepository.create).not.toHaveBeenCalled();
+    expect(linked.email).toBe('new@example.com');
+    expect(usersRepository.save).toHaveBeenCalledWith(linked);
+    expect(user.id).toBe('user-4');
+  });
+
+  it('keeps the old email when the new one belongs to another account', async () => {
+    const linked = {
+      id: 'user-5',
+      email: 'old@example.com',
+      passwordHash: null,
+      provider: 'authentik',
+      providerSub: 'sub-5',
+      firstName: null,
+      lastName: null,
+      displayName: null,
+    };
+    const owner = { id: 'user-6', email: 'taken@example.com' };
+    usersRepository.findByProvider.mockResolvedValue(linked);
+    usersRepository.findByEmail.mockResolvedValue(owner);
+
+    const user = await strategy.validate('http://idp.test/', {
+      id: 'sub-5',
+      email: 'taken@example.com',
+    });
+
+    expect(user.email).toBe('old@example.com');
+    expect(usersRepository.save).not.toHaveBeenCalled();
+    expect(usersRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('synchronizes stale profile data from Authentik on login', async () => {
+    const linked = {
+      id: 'user-7',
+      email: 'user@example.com',
+      passwordHash: null,
+      provider: 'authentik',
+      providerSub: 'sub-7',
+      firstName: 'Старое',
+      lastName: 'Старая',
+      displayName: 'Старая Старая Старая',
+    };
+    usersRepository.findByProvider.mockResolvedValue(linked);
+    usersRepository.save.mockImplementation(async (user) => user);
+
+    const user = await strategy.validate('http://idp.test/', {
+      id: 'sub-7',
+      email: 'user@example.com',
+      name: { givenName: 'Новое', familyName: 'Новое' },
+      displayName: 'Новое Новое Новое',
+    });
+
+    expect(user.firstName).toBe('Новое');
+    expect(user.lastName).toBe('Новое');
+    expect(user.displayName).toBe('Новое Новое Новое');
+    expect(usersRepository.save).toHaveBeenCalledWith(linked);
   });
 
   it('rejects a profile without an email', async () => {

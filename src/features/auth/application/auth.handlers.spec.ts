@@ -323,11 +323,20 @@ describe('GetCurrentUserHandler', () => {
     usersRepository.findById.mockResolvedValue({
       id: 'user-1',
       email: 'a@b.c',
+      firstName: 'Иван',
+      lastName: 'Иванов',
+      displayName: 'Иванов Иван',
     });
 
     await expect(
       handler.execute(new GetCurrentUserQuery('user-1')),
-    ).resolves.toEqual({ id: 'user-1', email: 'a@b.c' });
+    ).resolves.toEqual({
+      id: 'user-1',
+      email: 'a@b.c',
+      firstName: 'Иван',
+      lastName: 'Иванов',
+      displayName: 'Иванов Иван',
+    });
   });
 
   it('rejects when the user no longer exists', async () => {
