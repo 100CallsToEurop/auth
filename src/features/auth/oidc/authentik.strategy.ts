@@ -18,11 +18,17 @@ export class AuthentikStrategy extends PassportStrategy(Strategy, 'authentik') {
     private readonly configService: ConfigService,
     private readonly usersRepository: UsersRepository,
   ) {
+    const issuer = configService.getOrThrow<string>('AUTHENTIK_ISSUER');
     super({
-      issuer: configService.getOrThrow<string>('AUTHENTIK_ISSUER'),
-      authorizationURL: `${configService.getOrThrow<string>('AUTHENTIK_ISSUER')}authorize/`,
-      tokenURL: `${configService.getOrThrow<string>('AUTHENTIK_ISSUER')}token/`,
-      userInfoURL: `${configService.getOrThrow<string>('AUTHENTIK_ISSUER')}userinfo/`,
+      issuer,
+      authorizationURL:
+        configService.get<string>('AUTHENTIK_AUTHORIZATION_URL') ??
+        `${issuer}authorize/`,
+      tokenURL:
+        configService.get<string>('AUTHENTIK_TOKEN_URL') ?? `${issuer}token/`,
+      userInfoURL:
+        configService.get<string>('AUTHENTIK_USERINFO_URL') ??
+        `${issuer}userinfo/`,
       clientID: configService.getOrThrow<string>('AUTHENTIK_CLIENT_ID'),
       clientSecret: configService.getOrThrow<string>('AUTHENTIK_CLIENT_SECRET'),
       callbackURL: configService.getOrThrow<string>('AUTHENTIK_CALLBACK_URL'),
@@ -32,6 +38,12 @@ export class AuthentikStrategy extends PassportStrategy(Strategy, 'authentik') {
           'email',
           'profile',
         ],
+      // Authentik отдаёт authorize/token/userinfo на общих путях без слага
+      // приложения, а issuer — со слагом, поэтому endpoint-ы нельзя выводить
+      // конкатенацией из issuer (см. AUTHENTIK_*_URL).
+      // skipUserProfile: false — грузим userinfo, т.к. по умолчанию библиотека
+      // пропускает его и e-mail берётся только из ID-токена.
+      skipUserProfile: false,
     });
   }
 
