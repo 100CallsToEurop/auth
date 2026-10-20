@@ -31,7 +31,10 @@ import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { Public } from '../../../common/decorators/public.decorator.js';
 import { ExternalAccountLinker } from '../external/application/external-account-linker.js';
-import { ExternalAuthGuard } from '../external/api/external-auth.guard.js';
+import {
+  ExternalAuthGuard,
+  ExternalSyncGuard,
+} from '../external/api/external-auth.guard.js';
 import { ExternalProvidersRegistry } from '../external/infrastructure/external-providers.registry.js';
 import { SessionService } from '../application/session.service.js';
 import { User } from '../../user/domain/user.entity.js';
@@ -112,7 +115,7 @@ export class AuthController {
   // выбранному провайдеру, затем callback сам сохранит свежие данные.
   @Post('external/:provider/sync')
   @HttpCode(302)
-  @UseGuards(ExternalAuthGuard.forProviderSyncParam())
+  @UseGuards(ExternalSyncGuard)
   startExternalProviderSync() {
     // redirect к провайдеру выполняет guard
   }
@@ -144,14 +147,14 @@ export class AuthController {
   // Алиасы для совместимости: текущий фронт ходит в /auth/oidc/authentik
   @Public()
   @Get('oidc/authentik')
-  @UseGuards(ExternalAuthGuard.forProvider('authentik'))
+  @UseGuards(ExternalAuthGuard)
   async authWithAuthentik() {
     // Passport initiates redirect to Authentik
   }
 
   @Public()
   @Get('oidc/authentik/callback')
-  @UseGuards(ExternalAuthGuard.forProvider('authentik'))
+  @UseGuards(ExternalAuthGuard)
   async authWithAuthentikCallback(@Req() req: Request, @Res() res: Response) {
     return this.completeExternalFlow(req, res);
   }

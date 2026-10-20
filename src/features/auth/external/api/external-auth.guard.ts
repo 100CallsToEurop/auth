@@ -12,32 +12,34 @@ import passport from 'passport';
 import { ExternalProvidersRegistry } from '../infrastructure/external-providers.registry.js';
 
 /**
- * Единый guard внешнего входа: стратегия выбирается по :provider (Registry),
- * неизвестный или выключенный провайдер → 404. Редирект к провайдеру
- * (challenge) обрабатывается явно через callback passport.
+ * Guard входа через внешнего провайдера.
  *
- * На маршруте синхронизации (/link) guard требует залогиненного пользователя
- * и ставит в сессию одноразовый флаг externalSync — по нему verify-колбэк
- * обновляет профиль текущего аккаунта, а не выполняет вход.
+ * Старт (нет code/state в query): passport сам отдаёт 302 на провайдера —
+ * вызываем стратегию БЕЗ кастомного callback (passport.openidconnect
+ * редиректит через strategy.redirect → res.end()), canActivate возвращает
+ * false, т.к. ответ уже отправлен.
+ *
+ * Callback (есть code/state): вызываем с callback, требуем user, кладём его
+ * в req.user для контроллера.
+ *
+ * Слаг провайдера берётся из :provider маршрута либо выводится из пути
+ * (алиасы /auth/oidc/<slug>). Guard — обычный @Injectable класс с DI, чтобы
+ * Nest корректно его инстанцировал.
  */
 @Injectable()
 export class ExternalAuthGuard implements CanActivate {
-  protected readonly providerSlug: string | null = null;
   protected readonly mode: 'login' | 'sync' = 'login';
 
   private readonly logger = new Logger(ExternalAuthGuard.name);
 
-  constructor(private readonly registry: ExternalProvidersRegistry) {}
+  constructor(protected readonly registry: ExternalProvidersRegistry) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const http = context.switchToHttp();
     const request = http.getRequest<Request>();
     const response = http.getResponse<Response>();
 
-    const slug =
-      typeof request.params?.provider === 'string'
-        ? request.params.provider
-        : this.providerSlug;
+    const slug = this.resolveSlug(request);
     if (!slug) {
       throw new NotFoundException('External provider is not specified');
     }
@@ -50,11 +52,19 @@ export class ExternalAuthGuard implements CanActivate {
       (request.session as { externalSync?: boolean }).externalSync = true;
     }
 
-    // На callback (в пути есть /callback) пользователь обязан быть получен
-    // от стратегии: если passport вернул challenge — это повторный старт, а
-    // не завершение входа, и продолжать в контроллер нельзя.
-    const isCallback = /\/callback\/?$/.test(request.path);
+    const isCallback =
+      typeof request.query?.code === 'string' ||
+      typeof request.query?.state === 'string';
 
+    // Старт: passport сам редиректит к провайдеру.
+    if (!isCallback) {
+      await new Promise<void>((resolve) => {
+        passport.authenticate(slug)(request, response, () => resolve());
+      });
+      return false;
+    }
+
+    // Callback: получаем пользователя от стратегии.
     return new Promise<boolean>((resolve, reject) => {
       passport.authenticate(
         slug,
@@ -73,67 +83,70 @@ export class ExternalAuthGuard implements CanActivate {
           }
 
           if (user) {
-            // verify-колбэк стратегии уже вернул User из линковки
             (request as { user?: unknown }).user = user;
             resolve(true);
             return;
           }
 
-          const challenge = (info as { challenge?: string } | undefined)
-            ?.challenge;
-          if (!isCallback && typeof challenge === 'string') {
-            // первый шаг: passport-стратегия редиректит к провайдеру
-            response.redirect(challenge);
-            resolve(true);
-            return;
-          }
-
-          this.logFailure(slug, info);
+          const reason = this.describe(info);
+          this.logger.warn(
+            `External provider "${slug}" callback failed: ${reason || 'no user'}`,
+          );
           reject(
-            new UnauthorizedException(
-              typeof info === 'string'
-                ? info
-                : info
-                  ? JSON.stringify(info)
-                  : 'External authentication failed',
-            ),
+            new UnauthorizedException(reason || 'External authentication failed'),
           );
         },
       )(request, response);
     });
   }
 
+  /**
+   * Слаг провайдера: сначала :provider из маршрута, иначе последний сегмент
+   * пути до /callback (для алиасов вида /auth/oidc/authentik[/callback]).
+   */
+  private resolveSlug(request: Request): string | null {
+    const param = request.params?.provider;
+    if (typeof param === 'string' && param.length > 0) {
+      return param;
+    }
+    const path = (request.path || request.originalUrl || '').split('?')[0];
+    const segments = path.split('/').filter(Boolean);
+    // /api/auth/oidc/<slug>[/callback]
+    const markerIndex = segments.lastIndexOf('oidc');
+    const candidate =
+      markerIndex >= 0 ? segments[markerIndex + 1] : undefined;
+    if (candidate && candidate !== 'callback') {
+      return candidate;
+    }
+    return null;
+  }
+
+  private describe(info: unknown): string {
+    if (!info) {
+      return '';
+    }
+    if (typeof info === 'string') {
+      return info;
+    }
+    if (info instanceof Error) {
+      return info.message;
+    }
+    try {
+      return JSON.stringify(info);
+    } catch {
+      return '[unserializable info]';
+    }
+  }
+
   private logFailure(slug: string, reason: unknown): void {
-    const text =
-      reason instanceof Error
-        ? reason.message
-        : typeof reason === 'string'
-          ? reason
-          : reason
-            ? JSON.stringify(reason)
-            : 'unknown';
-    this.logger.warn(`External provider "${slug}" authentication failed: ${text}`);
+    this.logger.warn(
+      `External provider "${slug}" authentication failed: ${this.describe(reason) || 'unknown'}`,
+    );
   }
+}
 
-  /** Factory Method: guard с зафиксированным провайдером (алиасы маршрутов). */
-  static forProvider(slug: string): typeof ExternalAuthGuard {
-    return class extends ExternalAuthGuard {
-      protected override readonly providerSlug = slug;
-    };
-  }
-
-  /** Factory Method: guard синхронизации профиля (только для залогиненных). */
-  static forProviderSync(slug: string): typeof ExternalAuthGuard {
-    return class extends ExternalAuthGuard {
-      protected override readonly providerSlug = slug;
-      protected override readonly mode = 'sync' as const;
-    };
-  }
-
-  /** То же, но провайдер берётся из :provider маршрута. */
-  static forProviderSyncParam(): typeof ExternalAuthGuard {
-    return class extends ExternalAuthGuard {
-      protected override readonly mode = 'sync' as const;
-    };
-  }
+/** Guard синхронизации профиля: только для залогиненного пользователя. */
+@Injectable()
+export class ExternalSyncGuard extends ExternalAuthGuard {
+  protected override readonly mode = 'sync' as const;
 }

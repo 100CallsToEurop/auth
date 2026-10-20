@@ -17,7 +17,7 @@ import { RefreshTokensRepository } from './repository/refresh-tokens.repository.
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RefreshToken } from './domain/refresh-token.entity.js';
 import { ExternalAccountLinker } from './external/application/external-account-linker.js';
-import { ExternalAuthGuard } from './external/api/external-auth.guard.js';
+import { ExternalAuthGuard, ExternalSyncGuard } from './external/api/external-auth.guard.js';
 import { ExternalProvidersRegistry } from './external/infrastructure/external-providers.registry.js';
 import { ExternalStrategiesFactory } from './external/infrastructure/external-strategies.factory.js';
 import {
@@ -53,6 +53,7 @@ const COMMAND_HANDLERS = [
     ExternalProvidersRegistry,
     ExternalStrategiesFactory,
     ExternalAuthGuard,
+    ExternalSyncGuard,
     {
       provide: EXTERNAL_PROVIDERS,
       inject: [ConfigService, ExternalAccountLinker],
