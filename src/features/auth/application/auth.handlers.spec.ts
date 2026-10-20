@@ -86,7 +86,7 @@ describe('RegisterHandler', () => {
     const { passwordHash } = usersRepository.create.mock.calls[0][0];
     expect(passwordHash).not.toBe('password123');
     expect(await bcrypt.compare('password123', passwordHash)).toBe(true);
-    expect(sessionService.start).toHaveBeenCalledWith('user-1', 'test@example.com');
+    expect(sessionService.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1', email: 'test@example.com' }));
     expect(result).toEqual(SESSION);
   });
 
@@ -126,7 +126,7 @@ describe('RegisterHandler', () => {
     expect(await bcrypt.compare('password123', saved.passwordHash)).toBe(true);
     expect(authentikUser.provider).toBe('authentik');
     expect(authentikUser.providerSub).toBe('sub-1');
-    expect(sessionService.start).toHaveBeenCalledWith('user-9', 'a@b.c');
+    expect(sessionService.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-9', email: 'a@b.c' }));
     expect(result).toEqual(SESSION);
   });
 });
@@ -178,7 +178,7 @@ describe('LoginHandler', () => {
       new LoginCommand('A@B.C', 'password123'),
     );
 
-    expect(sessionService.start).toHaveBeenCalledWith('user-1', 'a@b.c');
+    expect(sessionService.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1', email: 'a@b.c' }));
     expect(result).toEqual(SESSION);
   });
 });
@@ -214,7 +214,7 @@ describe('RefreshHandler', () => {
     const result = await handler.execute(new RefreshCommand(rawToken));
 
     expect(refreshTokensRepository.remove).toHaveBeenCalledWith(jti);
-    expect(sessionService.start).toHaveBeenCalledWith('user-1', 'a@b.c');
+    expect(sessionService.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1', email: 'a@b.c' }));
     expect(result).toEqual(SESSION);
   });
 
@@ -313,20 +313,34 @@ describe('LogoutHandler', () => {
 
 describe('GetCurrentUserHandler', () => {
   const usersRepository = createUsersRepositoryMock();
-  const handler = new GetCurrentUserHandler(usersRepository as never);
+  const identitiesRepository = {
+    findByProvider: vi.fn(),
+    findByUserId: vi.fn(),
+    create: vi.fn(),
+  };
+  const handler = new GetCurrentUserHandler(
+    usersRepository as never,
+    identitiesRepository as never,
+  );
 
   beforeEach(() => {
     vi.clearAllMocks();
+    identitiesRepository.findByUserId.mockResolvedValue([]);
   });
 
-  it('returns the user when it exists', async () => {
+  it('returns the user with names and sign-in methods', async () => {
     usersRepository.findById.mockResolvedValue({
       id: 'user-1',
       email: 'a@b.c',
+      passwordHash: 'hash',
       firstName: 'Иван',
       lastName: 'Иванов',
       displayName: 'Иванов Иван',
     });
+    identitiesRepository.findByUserId.mockResolvedValue([
+      { provider: 'authentik' },
+      { provider: 'github' },
+    ]);
 
     await expect(
       handler.execute(new GetCurrentUserQuery('user-1')),
@@ -336,6 +350,7 @@ describe('GetCurrentUserHandler', () => {
       firstName: 'Иван',
       lastName: 'Иванов',
       displayName: 'Иванов Иван',
+      providers: ['authentik', 'github', 'password'],
     });
   });
 

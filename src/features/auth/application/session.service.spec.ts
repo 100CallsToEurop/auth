@@ -27,10 +27,22 @@ describe('SessionService', () => {
   });
 
   it('issues tokens and persists the refresh token record', async () => {
-    const result = await service.start('user-1', 'a@b.c');
+    const result = await service.start({
+      id: 'user-1',
+      email: 'a@b.c',
+      firstName: 'Иван',
+      lastName: 'Иванов',
+      displayName: 'Иванов Иван',
+    });
 
     expect(result).toEqual({
-      user: { id: 'user-1', email: 'a@b.c' },
+      user: {
+        id: 'user-1',
+        email: 'a@b.c',
+        firstName: 'Иван',
+        lastName: 'Иванов',
+        displayName: 'Иванов Иван',
+      },
       accessToken: 'access-token',
       refreshToken: 'refresh-token',
     });

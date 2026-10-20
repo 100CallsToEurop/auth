@@ -6,8 +6,22 @@ import {
 } from './auth.constants.js';
 import { TokensService } from './tokens.service.js';
 
+export interface SessionUserInput {
+  id: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+}
+
 export interface SessionResponse {
-  user: { id: string; email: string };
+  user: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    displayName: string | null;
+  };
   accessToken: string;
 }
 
@@ -22,21 +36,30 @@ export class SessionService {
     private readonly refreshTokensRepository: RefreshTokensRepository,
   ) {}
 
-  async start(userId: string, email: string): Promise<IssuedSession> {
-    const accessToken = await this.tokensService.signAccess(userId, email);
+  async start(user: SessionUserInput): Promise<IssuedSession> {
+    const accessToken = await this.tokensService.signAccess(
+      user.id,
+      user.email,
+    );
 
     const jti = randomUUID();
-    const refreshToken = await this.tokensService.signRefresh(userId, jti);
+    const refreshToken = await this.tokensService.signRefresh(user.id, jti);
 
     await this.refreshTokensRepository.create({
       id: jti,
-      userId,
+      userId: user.id,
       tokenHash: this.tokensService.hashToken(refreshToken),
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
     });
 
     return {
-      user: { id: userId, email },
+      user: {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName ?? null,
+        lastName: user.lastName ?? null,
+        displayName: user.displayName ?? null,
+      },
       accessToken,
       refreshToken,
     };

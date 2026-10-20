@@ -42,6 +42,6 @@ export class RefreshHandler implements ICommandHandler<RefreshCommand> {
 
     await this.refreshTokensRepository.remove(record.id);
 
-    return this.sessionService.start(record.userId, record.user.email);
+    return this.sessionService.start(record.user);
   }
 }

@@ -1,8 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
+  Param,
   Post,
   Req,
   Res,
@@ -27,7 +29,9 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator.j
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { Public } from '../../../common/decorators/public.decorator.js';
-import { AuthentikGuard } from '../oidc/authentik.guard.js';
+import { ExternalAccountLinker } from '../external/application/external-account-linker.js';
+import { ExternalAuthGuard } from '../external/api/external-auth.guard.js';
+import { ExternalProvidersRegistry } from '../external/infrastructure/external-providers.registry.js';
 import { SessionService } from '../application/session.service.js';
 import { User } from '../../user/domain/user.entity.js';
 
@@ -38,6 +42,8 @@ export class AuthController {
     private readonly queryBus: QueryBus,
     private readonly configService: ConfigService,
     private readonly sessionService: SessionService,
+    private readonly providersRegistry: ExternalProvidersRegistry,
+    private readonly linker: ExternalAccountLinker,
   ) {}
 
   @Public()
@@ -95,32 +101,82 @@ export class AuthController {
   }
 
   @Public()
+  @Get('providers')
+  listProviders() {
+    return this.providersRegistry.list();
+  }
+
+  // Синхронизация профиля из провайдера. Профиль обновляется ТОЛЬКО при этом
+  // запросе (обычный вход данные не трогает). POST запускает OAuth-редирект к
+  // выбранному провайдеру, затем callback сам сохранит свежие данные.
+  @Post('external/:provider/sync')
+  @HttpCode(302)
+  @UseGuards(ExternalAuthGuard.forProviderSyncParam())
+  startExternalProviderSync() {
+    // redirect к провайдеру выполняет guard
+  }
+
+  // Отвязка способа входа от текущего аккаунта.
+  @Delete('external/:provider')
+  async unlinkExternalProvider(
+    @CurrentUser() user: AuthUser,
+    @Param('provider') provider: string,
+  ) {
+    await this.linker.unlink(provider, user.id);
+    return this.queryBus.execute(new GetCurrentUserQuery(user.id));
+  }
+
+  @Public()
+  @Get('external/:provider')
+  @UseGuards(ExternalAuthGuard)
+  async authWithExternalProvider() {
+    // Passport initiates redirect to the provider
+  }
+
+  @Public()
+  @Get('external/:provider/callback')
+  @UseGuards(ExternalAuthGuard)
+  async externalProviderCallback(@Req() req: Request, @Res() res: Response) {
+    return this.completeExternalFlow(req, res);
+  }
+
+  // Алиасы для совместимости: текущий фронт ходит в /auth/oidc/authentik
+  @Public()
   @Get('oidc/authentik')
-  @UseGuards(AuthentikGuard)
+  @UseGuards(ExternalAuthGuard.forProvider('authentik'))
   async authWithAuthentik() {
     // Passport initiates redirect to Authentik
   }
 
   @Public()
   @Get('oidc/authentik/callback')
-  @UseGuards(AuthentikGuard)
+  @UseGuards(ExternalAuthGuard.forProvider('authentik'))
   async authWithAuthentikCallback(@Req() req: Request, @Res() res: Response) {
-    const user = req.user as User;
-    const session = await this.sessionService.start(user.id, user.email);
-    const isProduction =
-      this.configService.get<string>('NODE_ENV') === 'production';
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
+    return this.completeExternalFlow(req, res);
+  }
 
-    res.cookie(REFRESH_COOKIE, session.refreshToken, {
+  private async completeExternalFlow(req: Request, res: Response) {
+    const user = req.user as User;
+    const session = await this.sessionService.start(user);
+    this.setRefreshCookie(res, session.refreshToken);
+    return res.redirect(this.frontendUrl());
+  }
+
+  private frontendUrl(): string {
+    return (
+      this.configService.get<string>('FRONTEND_URL') ||
+      'http://localhost:3000'
+    );
+  }
+
+  private setRefreshCookie(res: Response, token: string): void {
+    res.cookie(REFRESH_COOKIE, token, {
       httpOnly: true,
-      secure: isProduction,
+      secure: this.configService.get<string>('NODE_ENV') === 'production',
       sameSite: 'lax',
       path: REFRESH_COOKIE_PATH,
       maxAge: REFRESH_TOKEN_TTL_MS,
     });
-
-    return res.redirect(frontendUrl);
   }
 
   private toResponse(
@@ -130,15 +186,7 @@ export class AuthController {
     user: IssuedSession['user'];
     accessToken: string;
   } {
-    const isProduction =
-      this.configService.get<string>('NODE_ENV') === 'production';
-    res.cookie(REFRESH_COOKIE, session.refreshToken, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'lax',
-      path: REFRESH_COOKIE_PATH,
-      maxAge: REFRESH_TOKEN_TTL_MS,
-    });
+    this.setRefreshCookie(res, session.refreshToken);
     return { user: session.user, accessToken: session.accessToken };
   }
 }

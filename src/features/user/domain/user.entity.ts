@@ -8,6 +8,7 @@ import {
   type Relation,
 } from 'typeorm';
 import { RefreshToken } from '../../auth/domain/refresh-token.entity.js';
+import { ExternalIdentity } from './external-identity.entity.js';
 
 @Entity('users')
 export class User {
@@ -41,4 +42,7 @@ export class User {
 
   @OneToMany(() => RefreshToken, (token) => token.user)
   refreshTokens: Relation<RefreshToken[]>;
+
+  @OneToMany(() => ExternalIdentity, (identity) => identity.user)
+  externalIdentities: Relation<ExternalIdentity[]>;
 }
