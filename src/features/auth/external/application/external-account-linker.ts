@@ -45,11 +45,7 @@ export class ExternalAccountLinker {
       const legacy = await this.usersRepository.findByProvider(provider, sub);
       if (legacy) {
         user = legacy;
-        await this.identitiesRepository.create({
-          userId: legacy.id,
-          provider,
-          providerSub: sub,
-        });
+        await this.ensureIdentity(legacy.id, provider, sub);
       }
     }
 
@@ -66,23 +62,38 @@ export class ExternalAccountLinker {
         lastName: profile.lastName?.trim() || null,
         displayName: profile.displayName?.trim() || null,
       });
-      await this.identitiesRepository.create({
-        userId: user.id,
-        provider,
-        providerSub: sub,
-      });
+      await this.ensureIdentity(user.id, provider, sub);
       return user;
     }
 
     if (!record) {
-      await this.identitiesRepository.create({
-        userId: user.id,
-        provider,
-        providerSub: sub,
-      });
+      await this.ensureIdentity(user.id, provider, sub);
     }
 
     return user;
+  }
+
+  /**
+   * Идемпотентная привязка (provider, sub) к пользователю. Уникальный индекс
+   * uq_external_identities_provider_sub может сработать при параллельных
+   * callback — тогда просто перечитываем существующую запись.
+   */
+  private async ensureIdentity(
+    userId: string,
+    provider: string,
+    providerSub: string,
+  ): Promise<void> {
+    try {
+      await this.identitiesRepository.create({ userId, provider, providerSub });
+    } catch (error) {
+      const existing = await this.identitiesRepository.findByProvider(
+        provider,
+        providerSub,
+      );
+      if (!existing) {
+        throw error;
+      }
+    }
   }
 
   /**

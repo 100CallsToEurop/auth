@@ -69,8 +69,38 @@ describe('ExternalAccountLinker', () => {
     expect(user.id).toBe('user-1');
   });
 
-  it('does NOT update the profile on login (only links)', async () => {
+  it('is idempotent when the unique identity already exists (race)', async () => {
     const stored = {
+      id: 'user-race',
+      email: 'race@example.com',
+      firstName: null,
+      lastName: null,
+      displayName: null,
+    };
+    // findByProvider не нашёл запись (параллельный callback уже создал её),
+    // пользователь найден по email, но create падает на уникальном индексе.
+    identitiesRepository.findByProvider
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'link-race',
+        userId: 'user-race',
+        provider: 'authentik',
+        providerSub: 'sub-1',
+      });
+    usersRepository.findByEmail.mockResolvedValue(stored);
+    const uniqueViolation = Object.assign(new Error('duplicate key'), {
+      code: '23505',
+    });
+    identitiesRepository.create.mockRejectedValueOnce(uniqueViolation);
+
+    const user = await linker.link('authentik', PROFILE);
+
+    expect(user.id).toBe('user-race');
+    expect(identitiesRepository.create).toHaveBeenCalledTimes(1);
+    expect(usersRepository.create).not.toHaveBeenCalled();
+  });
+
+  it('does NOT update the profile on login (only links)', async () => {    const stored = {
       id: 'user-2',
       email: 'old@example.com',
       firstName: 'Старое',
