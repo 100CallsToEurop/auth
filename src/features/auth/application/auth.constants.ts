@@ -6,4 +6,4 @@ export const REFRESH_TOKEN_TTL = '7d';
 export const REFRESH_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const REFRESH_COOKIE = 'refresh_token';
-export const REFRESH_COOKIE_PATH = '/auth';
+export const REFRESH_COOKIE_PATH = '/api/auth';
