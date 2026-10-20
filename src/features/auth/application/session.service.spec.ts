@@ -1,0 +1,49 @@
+import { RefreshTokensRepository } from '../repository/refresh-tokens.repository.js';
+import { SessionService } from './session.service.js';
+import { TokensService } from './tokens.service.js';
+
+describe('SessionService', () => {
+  const tokensService = {
+    signAccess: vi.fn().mockResolvedValue('access-token'),
+    signRefresh: vi.fn().mockImplementation(async () => 'refresh-token'),
+    hashToken: vi.fn((raw: string) => `hash:${raw}`),
+  };
+  const refreshTokensRepository = {
+    create: vi.fn().mockResolvedValue(undefined),
+    findByIdWithUser: vi.fn(),
+    remove: vi.fn(),
+  };
+
+  const service = new SessionService(
+    tokensService as unknown as TokensService,
+    refreshTokensRepository as unknown as RefreshTokensRepository,
+  );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    tokensService.signAccess.mockResolvedValue('access-token');
+    tokensService.signRefresh.mockResolvedValue('refresh-token');
+    refreshTokensRepository.create.mockResolvedValue(undefined);
+  });
+
+  it('issues tokens and persists the refresh token record', async () => {
+    const result = await service.start('user-1', 'a@b.c');
+
+    expect(result).toEqual({
+      user: { id: 'user-1', email: 'a@b.c' },
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+    });
+
+    expect(tokensService.signAccess).toHaveBeenCalledWith('user-1', 'a@b.c');
+    expect(tokensService.signRefresh).toHaveBeenCalledTimes(1);
+
+    const record = refreshTokensRepository.create.mock.calls[0][0];
+    expect(record.userId).toBe('user-1');
+    expect(record.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    expect(record.tokenHash).toBe('hash:refresh-token');
+    expect(record.expiresAt.getTime()).toBeGreaterThan(Date.now());
+  });
+});
