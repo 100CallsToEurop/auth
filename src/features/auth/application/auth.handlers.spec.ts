@@ -27,6 +27,7 @@ function createUsersRepositoryMock() {
     findByEmail: vi.fn(),
     findById: vi.fn(),
     create: vi.fn(),
+    save: vi.fn(),
   };
 }
 
@@ -90,12 +91,43 @@ describe('RegisterHandler', () => {
   });
 
   it('rejects an already registered email', async () => {
-    usersRepository.findByEmail.mockResolvedValue({ id: 'user-1' });
+    usersRepository.findByEmail.mockResolvedValue({
+      id: 'user-1',
+      passwordHash: 'hashed-password',
+    });
 
     await expect(
       handler.execute(new RegisterCommand('a@b.c', 'password123')),
     ).rejects.toThrow(ConflictException);
     expect(usersRepository.create).not.toHaveBeenCalled();
+    expect(usersRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('attaches a password to an Authentik-created account and signs it in', async () => {
+    const authentikUser = {
+      id: 'user-9',
+      email: 'a@b.c',
+      passwordHash: null,
+      provider: 'authentik',
+      providerSub: 'sub-1',
+    };
+    usersRepository.findByEmail.mockResolvedValue(authentikUser);
+    usersRepository.save.mockImplementation(async (user: typeof authentikUser) => user);
+
+    const result = await handler.execute(
+      new RegisterCommand('A@B.C', 'password123'),
+    );
+
+    expect(usersRepository.create).not.toHaveBeenCalled();
+    expect(usersRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-9', email: 'a@b.c' }),
+    );
+    const saved = usersRepository.save.mock.calls[0][0];
+    expect(await bcrypt.compare('password123', saved.passwordHash)).toBe(true);
+    expect(authentikUser.provider).toBe('authentik');
+    expect(authentikUser.providerSub).toBe('sub-1');
+    expect(sessionService.start).toHaveBeenCalledWith('user-9', 'a@b.c');
+    expect(result).toEqual(SESSION);
   });
 });
 
