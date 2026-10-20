@@ -1,8 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, VerifyCallback } from 'passport-openidconnect';
+import { Strategy } from 'passport-openidconnect';
 import { UsersRepository } from '../../user/repository/users.repository.js';
+import { User } from '../../user/domain/user.entity.js';
+
+interface AuthentikProfile {
+  id?: string;
+  sub?: string;
+  email?: string;
+  emails?: Array<{ value: string }>;
+}
 
 @Injectable()
 export class AuthentikStrategy extends PassportStrategy(Strategy, 'authentik') {
@@ -29,18 +37,13 @@ export class AuthentikStrategy extends PassportStrategy(Strategy, 'authentik') {
 
   async validate(
     issuer: string,
-    profile: any,
-    context: any,
-    idToken: string | undefined,
-    accessToken: string,
-    refreshToken: string | undefined,
-    done: VerifyCallback,
-  ) {
+    profile: AuthentikProfile,
+  ): Promise<User> {
     const sub = profile?.id || profile?.sub;
     const email = profile?.emails?.[0]?.value || profile?.email;
 
     if (!email) {
-      return done(new Error('Email not provided by Authentik'), false);
+      throw new UnauthorizedException('Email not provided by Authentik');
     }
 
     let user = await this.usersRepository.findByEmail(email);
@@ -51,13 +54,13 @@ export class AuthentikStrategy extends PassportStrategy(Strategy, 'authentik') {
         passwordHash: null,
         provider: 'authentik',
         providerSub: sub,
-      } as any);
+      });
     } else if (user.provider !== 'authentik' || user.providerSub !== sub) {
       user.provider = user.provider === 'local' ? 'authentik' : user.provider;
-      user.providerSub = user.providerSub || sub;
+      user.providerSub = user.providerSub || sub || null;
       await this.usersRepository.save(user);
     }
 
-    return done(null, user);
+    return user;
   }
 }
