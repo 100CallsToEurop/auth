@@ -111,8 +111,16 @@ export class AuthController {
   }
 
   // Синхронизация профиля из провайдера. Профиль обновляется ТОЛЬКО при этом
-  // запросе (обычный вход данные не трогает). POST запускает OAuth-редирект к
-  // выбранному провайдеру, затем callback сам сохранит свежие данные.
+  // запросе (обычный вход данные не трогает). GET запускает OAuth-редирект к
+  // выбранному провайдеру (используется как ссылка в UI), затем callback сам
+  // сохранит свежие данные.
+  @Public()
+  @Get('external/:provider/sync')
+  @UseGuards(ExternalSyncGuard)
+  startExternalProviderSyncGet() {
+    // redirect к провайдеру выполняет guard
+  }
+
   @Post('external/:provider/sync')
   @HttpCode(302)
   @UseGuards(ExternalSyncGuard)

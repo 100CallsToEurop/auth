@@ -10,6 +10,8 @@ import {
 import type { Request, Response } from 'express';
 import passport from 'passport';
 import { ExternalProvidersRegistry } from '../infrastructure/external-providers.registry.js';
+import { TokensService } from '../../application/tokens.service.js';
+import { REFRESH_COOKIE } from '../../application/auth.constants.js';
 
 /**
  * Guard входа через внешнего провайдера.
@@ -32,7 +34,10 @@ export class ExternalAuthGuard implements CanActivate {
 
   private readonly logger = new Logger(ExternalAuthGuard.name);
 
-  constructor(protected readonly registry: ExternalProvidersRegistry) {}
+  constructor(
+    protected readonly registry: ExternalProvidersRegistry,
+    private readonly tokensService?: TokensService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const http = context.switchToHttp();
@@ -46,10 +51,12 @@ export class ExternalAuthGuard implements CanActivate {
     this.registry.require(slug);
 
     if (this.mode === 'sync') {
-      if (!(request as { user?: unknown }).user) {
-        throw new UnauthorizedException();
-      }
-      (request.session as { externalSync?: boolean }).externalSync = true;
+      // Навигация браузера не шлёт Authorization — синхронизацию запускает
+      // <a href>, поэтому пользователя восстанавливаем из refresh-cookie.
+      const user = await this.authenticateSyncRequest(request);
+      // Запоминаем id пользователя: callback придёт без заголовков, и по
+      // этому флагу (одноразовому) обновим профиль нужного аккаунта.
+      (request.session as { externalSync?: string }).externalSync = user.id;
     }
 
     const isCallback =
@@ -101,6 +108,34 @@ export class ExternalAuthGuard implements CanActivate {
   }
 
   /**
+   * Аутентификация запроса синхронизации. Браузерный переход по ссылке не
+   * несёт Authorization, поэтому если req.user не установлен глобальным
+   * JwtAuthGuard — восстанавливаем пользователя из refresh-cookie.
+   */
+  private async authenticateSyncRequest(
+    request: Request,
+  ): Promise<{ id: string }> {
+    const existing = (request as { user?: { id?: string } }).user;
+    if (existing?.id) {
+      return { id: existing.id };
+    }
+
+    const raw = request.cookies?.[REFRESH_COOKIE] as string | undefined;
+    if (!raw || !this.tokensService) {
+      throw new UnauthorizedException();
+    }
+
+    const payload = await this.tokensService.verifyRefresh(raw);
+    if (!payload) {
+      throw new UnauthorizedException();
+    }
+
+    const user = { id: payload.sub };
+    (request as { user?: unknown }).user = { id: payload.sub, email: '' };
+    return user;
+  }
+
+  /**
    * Слаг провайдера: сначала :provider из маршрута, иначе последний сегмент
    * пути до /callback (для алиасов вида /auth/oidc/authentik[/callback]).
    */
@@ -149,4 +184,11 @@ export class ExternalAuthGuard implements CanActivate {
 @Injectable()
 export class ExternalSyncGuard extends ExternalAuthGuard {
   protected override readonly mode = 'sync' as const;
+
+  constructor(
+    registry: ExternalProvidersRegistry,
+    tokensService: TokensService,
+  ) {
+    super(registry, tokensService);
+  }
 }

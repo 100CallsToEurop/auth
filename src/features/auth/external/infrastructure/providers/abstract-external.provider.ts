@@ -2,7 +2,6 @@ import type { Strategy as PassportStrategy } from 'passport';
 import type { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
 import { ExternalAccountLinker } from '../../application/external-account-linker.js';
-import type { User } from '../../../../user/domain/user.entity.js';
 import type { ExternalProvider } from './external-provider.js';
 
 /**
@@ -62,36 +61,37 @@ export abstract class AbstractExternalProvider implements ExternalProvider {
     return (profile: unknown) => linker.link(slug, profile as never);
   }
 
-  /** Синхронизация: обновляет профиль текущего (залогиненного) пользователя. */
+  /**
+   * Синхронизация: обновляет профиль текущего (залогиненного) пользователя.
+   * userId приходит из одноразового флага externalSync в сессии (его ставит
+   * guard на маршруте /sync), т.к. callback идёт без заголовков авторизации.
+   */
   protected syncFn() {
     const linker = this.linker;
     const slug = this.slug;
-    return (req: Request, profile: unknown) =>
-      linker.syncProvider(slug, profile as never, this.currentUserId(req));
+    return (userId: string, profile: unknown) =>
+      linker.syncProvider(slug, profile as never, userId);
   }
 
   /**
-   * Выбор режима на callback: если в сессии стоит флаг externalSync (его
-   * ставит guard на маршруте /link), профиль обновляется у текущего
-   * пользователя, иначе — обычный вход/создание аккаунта.
+   * Выбор режима на callback: если в сессии стоит одноразовый флаг
+   * externalSync (userId), профиль обновляется у этого пользователя, иначе —
+   * обычный вход/создание аккаунта.
    */
   protected dispatchFn() {
     const verify = this.verifyFn();
     const sync = this.syncFn();
     return (req: Request, profile: unknown) => {
-      const isSync = Boolean(
-        (req.session as { externalSync?: boolean } | undefined)?.externalSync,
-      );
-      if (isSync) {
+      const session = req.session as
+        | { externalSync?: string }
+        | undefined;
+      const syncUserId = session?.externalSync;
+      if (syncUserId) {
         // флаг одноразовый — не влияем на последующие входы
-        delete (req.session as { externalSync?: boolean }).externalSync;
-        return sync(req, profile);
+        delete session?.externalSync;
+        return sync(syncUserId, profile);
       }
       return verify(profile);
     };
-  }
-
-  protected currentUserId(req: Request): string {
-    return (req.user as User | undefined)?.id ?? '';
   }
 }
