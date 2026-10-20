@@ -50,6 +50,11 @@ export class ExternalAuthGuard implements CanActivate {
       (request.session as { externalSync?: boolean }).externalSync = true;
     }
 
+    // На callback (в пути есть /callback) пользователь обязан быть получен
+    // от стратегии: если passport вернул challenge — это повторный старт, а
+    // не завершение входа, и продолжать в контроллер нельзя.
+    const isCallback = /\/callback\/?$/.test(request.path);
+
     return new Promise<boolean>((resolve, reject) => {
       passport.authenticate(
         slug,
@@ -76,7 +81,7 @@ export class ExternalAuthGuard implements CanActivate {
 
           const challenge = (info as { challenge?: string } | undefined)
             ?.challenge;
-          if (typeof challenge === 'string') {
+          if (!isCallback && typeof challenge === 'string') {
             // первый шаг: passport-стратегия редиректит к провайдеру
             response.redirect(challenge);
             resolve(true);

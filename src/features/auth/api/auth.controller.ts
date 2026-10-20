@@ -8,6 +8,7 @@ import {
   Post,
   Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
@@ -156,7 +157,10 @@ export class AuthController {
   }
 
   private async completeExternalFlow(req: Request, res: Response) {
-    const user = req.user as User;
+    const user = req.user as User | undefined;
+    if (!user?.id) {
+      throw new UnauthorizedException('External provider did not return a user');
+    }
     const session = await this.sessionService.start(user);
     this.setRefreshCookie(res, session.refreshToken);
     return res.redirect(this.frontendUrl());
