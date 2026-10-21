@@ -25,7 +25,7 @@ import {
 } from '../../../common/http/session-http.js';
 import { User } from '../../user/domain/user.entity.js';
 import { ExternalAccountLinker } from '../application/external-account-linker.js';
-import { ExternalProvidersRegistry } from '../infrastructure/external-providers.registry.js';
+import { ExternalProvidersRegistry } from '../../provider/infrastructure/external-providers.registry.js';
 import {
   ExternalAuthGuard,
   ExternalSyncGuard,

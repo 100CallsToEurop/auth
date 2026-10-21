@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import { Strategy as OIDCStrategy } from 'passport-openidconnect';
 import type { Strategy as PassportStrategy } from 'passport';
 import type { Request } from 'express';
-import type { ExternalProfile } from '../../domain/external-profile.js';
+import type { ExternalProfile } from '../../../external/domain/external-profile.js';
 import { AbstractExternalProvider } from './abstract-external.provider.js';
 
 interface AuthentikOidcProfile {

@@ -1,7 +1,7 @@
 import type { Strategy as PassportStrategy } from 'passport';
 import type { Request } from 'express';
 import { ConfigService } from '@nestjs/config';
-import { ExternalAccountLinker } from '../../application/external-account-linker.js';
+import { ExternalAccountLinker } from '../../../external/application/external-account-linker.js';
 import type { ExternalProvider } from './external-provider.js';
 
 /**

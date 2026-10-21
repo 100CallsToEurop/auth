@@ -1,10 +1,10 @@
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
-import { LoginCommand } from './commands/login/login.command.js';
-import { LoginHandler } from './commands/login/login.handler.js';
-import { RegisterCommand } from './commands/register/register.command.js';
-import { RegisterHandler } from './commands/register/register.handler.js';
-import { PasswordService } from './password.service.js';
+import { LoginCommand } from '../application/commands/login/login.command.js';
+import { LoginHandler } from '../application/commands/login/login.handler.js';
+import { RegisterCommand } from '../application/commands/register/register.command.js';
+import { RegisterHandler } from '../application/commands/register/register.handler.js';
+import { PasswordService } from '../application/password.service.js';
 import { GetCurrentUserHandler } from '../../user/application/queries/get-current-user/get-current-user.handler.js';
 import { GetCurrentUserQuery } from '../../user/application/queries/get-current-user/get-current-user.query.js';
 
@@ -86,8 +86,6 @@ describe('RegisterHandler', () => {
       id: 'user-9',
       email: 'a@b.c',
       passwordHash: null,
-      provider: 'authentik',
-      providerSub: 'sub-1',
     };
     usersRepository.findByEmail.mockResolvedValue(authentikUser);
     usersRepository.save.mockImplementation(async (user: typeof authentikUser) => user);
@@ -102,8 +100,6 @@ describe('RegisterHandler', () => {
     );
     const saved = usersRepository.save.mock.calls[0][0];
     expect(await bcrypt.compare('password123', saved.passwordHash)).toBe(true);
-    expect(authentikUser.provider).toBe('authentik');
-    expect(authentikUser.providerSub).toBe('sub-1');
     expect(sessionService.start).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'user-9', email: 'a@b.c' }),
       {},
@@ -170,9 +166,7 @@ describe('LoginHandler', () => {
 describe('GetCurrentUserHandler', () => {
   const usersRepository = createUsersRepositoryMock();
   const identitiesRepository = {
-    findByProvider: vi.fn(),
     findByUserId: vi.fn(),
-    create: vi.fn(),
   };
   const handler = new GetCurrentUserHandler(
     usersRepository as never,

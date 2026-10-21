@@ -22,12 +22,6 @@ export class User {
   @Column({ type: 'varchar', length: 255, name: 'password_hash', nullable: true })
   passwordHash: string | null;
 
-  @Column({ type: 'varchar', length: 50, default: 'local' })
-  provider: string;
-
-  @Column({ type: 'varchar', length: 255, name: 'provider_sub', nullable: true })
-  providerSub: string | null;
-
   @Column({ type: 'varchar', length: 255, name: 'first_name', nullable: true })
   firstName: string | null;
 

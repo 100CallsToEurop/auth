@@ -1,10 +1,10 @@
 import { NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { LogoutAllHandler } from './commands/logout-all/logout-all.handler.js';
-import { LogoutAllCommand } from './commands/logout-all/logout-all.command.js';
-import { RevokeSessionHandler } from './commands/revoke-session/revoke-session.handler.js';
-import { RevokeSessionCommand } from './commands/revoke-session/revoke-session.command.js';
-import { ListSessionsHandler } from './queries/list-sessions/list-sessions.handler.js';
-import { ListSessionsQuery } from './queries/list-sessions/list-sessions.query.js';
+import { LogoutAllHandler } from '../application/commands/logout-all/logout-all.handler.js';
+import { LogoutAllCommand } from '../application/commands/logout-all/logout-all.command.js';
+import { RevokeSessionHandler } from '../application/commands/revoke-session/revoke-session.handler.js';
+import { RevokeSessionCommand } from '../application/commands/revoke-session/revoke-session.command.js';
+import { ListSessionsHandler } from '../application/queries/list-sessions/list-sessions.handler.js';
+import { ListSessionsQuery } from '../application/queries/list-sessions/list-sessions.query.js';
 
 function createRepositoryMock() {
   return {

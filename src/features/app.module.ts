@@ -5,12 +5,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserModule } from './user/user.module.js';
 import { SessionModule } from './session/session.module.js';
 import { ExternalModule } from './external/external.module.js';
+import { ProviderModule } from './provider/provider.module.js';
 import { AuthModule } from './auth/auth.module.js';
-
-// function parseBool(value: string | undefined, fallback: boolean): boolean {
-//   if (value === undefined) return fallback;
-//   return value === 'true';
-// }
 
 @Module({
   imports: [
@@ -26,10 +22,6 @@ import { AuthModule } from './auth/auth.module.js';
         password: config.get<string>('PGPASSWORD', 'postgres'),
         database: config.get<string>('PGDATABASE', 'auth'),
         autoLoadEntities: true,
-        // synchronize: parseBool(
-        //   config.get<string>('DB_SYNCHRONIZE'),
-        //   config.get<string>('NODE_ENV') !== 'production',
-        // ),
         synchronize: true,
       }),
     }),
@@ -37,8 +29,8 @@ import { AuthModule } from './auth/auth.module.js';
     AuthModule,
     SessionModule,
     ExternalModule,
+    ProviderModule,
     UserModule,
   ],
-  controllers: [],
 })
 export class AppModule {}

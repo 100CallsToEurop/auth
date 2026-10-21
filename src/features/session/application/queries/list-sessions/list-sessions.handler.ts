@@ -11,7 +11,6 @@ export interface SessionInfo {
   device: string;
   ip: string | null;
   createdAt: Date;
-  lastUsedAt: Date | null;
   expiresAt: Date;
   current: boolean;
 }
@@ -42,7 +41,6 @@ export class ListSessionsHandler
         device: describeDevice(session.userAgent),
         ip: session.ip,
         createdAt: session.createdAt,
-        lastUsedAt: session.lastUsedAt,
         expiresAt: session.expiresAt,
         current: session.id === query.currentSessionId,
       }));

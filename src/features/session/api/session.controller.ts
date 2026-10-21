@@ -14,7 +14,7 @@ import type { Request, Response } from 'express';
 import {
   REFRESH_COOKIE,
   REFRESH_COOKIE_PATH,
-} from '../application/session.constants.js';
+} from '../../../constants/session.constants.js';
 import { LogoutCommand } from '../application/commands/logout/logout.command.js';
 import { LogoutAllCommand } from '../application/commands/logout-all/logout-all.command.js';
 import { RevokeSessionCommand } from '../application/commands/revoke-session/revoke-session.command.js';
@@ -26,7 +26,7 @@ import type { AuthUser } from '../../../common/decorators/current-user.decorator
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { Public } from '../../../common/decorators/public.decorator.js';
 import { frontendUrl, sessionResponse } from '../../../common/http/session-http.js';
-import { ExternalProvidersRegistry } from '../../external/infrastructure/external-providers.registry.js';
+import { ExternalProvidersRegistry } from '../../provider/infrastructure/external-providers.registry.js';
 
 @Controller('auth')
 export class SessionController {

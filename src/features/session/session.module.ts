@@ -11,7 +11,7 @@ import { RevokeSessionHandler } from './application/commands/revoke-session/revo
 import { RefreshHandler } from './application/commands/refresh/refresh.handler.js';
 import { ListSessionsHandler } from './application/queries/list-sessions/list-sessions.handler.js';
 import { SessionController } from './api/session.controller.js';
-import { ExternalModule } from '../external/external.module.js';
+import { ProviderModule } from '../provider/provider.module.js';
 
 const SESSION_HANDLERS = [
   RefreshHandler,
@@ -25,7 +25,7 @@ const SESSION_HANDLERS = [
   imports: [
     CqrsModule,
     TypeOrmModule.forFeature([RefreshToken]),
-    forwardRef(() => ExternalModule),
+    forwardRef(() => ProviderModule),
   ],
   controllers: [SessionController],
   providers: [

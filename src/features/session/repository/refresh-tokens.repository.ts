@@ -43,10 +43,6 @@ export class RefreshTokensRepository {
     return this.repository.save(record);
   }
 
-  async touch(id: string): Promise<void> {
-    await this.repository.update({ id }, { lastUsedAt: new Date() });
-  }
-
   /** Провайдер, которым была создана сессия (для выбора SSO-logout). */
   async findProviderById(id: string): Promise<string | null> {
     const record = await this.repository.findOne({

@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { LogoutCommand } from './commands/logout/logout.command.js';
-import { LogoutHandler } from './commands/logout/logout.handler.js';
-import { RefreshCommand } from './commands/refresh/refresh.command.js';
-import { RefreshHandler } from './commands/refresh/refresh.handler.js';
+import { LogoutCommand } from '../application/commands/logout/logout.command.js';
+import { LogoutHandler } from '../application/commands/logout/logout.handler.js';
+import { RefreshCommand } from '../application/commands/refresh/refresh.command.js';
+import { RefreshHandler } from '../application/commands/refresh/refresh.handler.js';
 
 const sha256 = (value: string): string =>
   createHash('sha256').update(value).digest('hex');
@@ -16,7 +16,6 @@ const SESSION = {
 function createRefreshTokensRepositoryMock() {
   return {
     findByIdWithUser: vi.fn(),
-    create: vi.fn(),
     remove: vi.fn(),
   };
 }

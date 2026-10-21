@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { RefreshTokensRepository } from '../repository/refresh-tokens.repository.js';
 import {
   REFRESH_TOKEN_TTL_MS,
-} from './session.constants.js';
+} from '../../../constants/session.constants.js';
 import { TokensService } from './tokens.service.js';
 
 export interface SessionUserInput {

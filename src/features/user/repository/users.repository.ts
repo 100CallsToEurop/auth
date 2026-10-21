@@ -18,10 +18,6 @@ export class UsersRepository {
     return this.repository.findOneBy({ email });
   }
 
-  findByProvider(provider: string, providerSub: string): Promise<User | null> {
-    return this.repository.findOneBy({ provider, providerSub });
-  }
-
   create(data: Partial<User>): Promise<User> {
     const user = this.repository.create(data);
     return this.repository.save(user);

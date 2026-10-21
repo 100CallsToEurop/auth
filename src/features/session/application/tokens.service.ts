@@ -7,7 +7,7 @@ import {
   JWT_REFRESH_SECRET,
   JWT_SECRET,
   REFRESH_TOKEN_TTL,
-} from './session.constants.js';
+} from '../../../constants/session.constants.js';
 
 export interface RefreshPayload {
   sub: string;

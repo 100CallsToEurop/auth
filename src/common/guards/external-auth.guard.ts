@@ -9,9 +9,9 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import passport from 'passport';
-import { ExternalProvidersRegistry } from '../../features/external/infrastructure/external-providers.registry.js';
+import { ExternalProvidersRegistry } from '../../features/provider/infrastructure/external-providers.registry.js';
 import { TokensService } from '../../features/session/application/tokens.service.js';
-import { REFRESH_COOKIE } from '../../features/session/application/session.constants.js';
+import { REFRESH_COOKIE } from '../../constants/session.constants.js';
 
 /**
  * Guard входа через внешнего провайдера.

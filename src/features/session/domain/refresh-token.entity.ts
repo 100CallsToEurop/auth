@@ -42,10 +42,6 @@ export class RefreshToken {
   @Column({ name: 'ip', type: 'varchar', length: 64, nullable: true })
   ip: string | null;
 
-  /** Когда сессия последний раз использовалась (refresh). */
-  @Column({ name: 'last_used_at', type: 'timestamptz', nullable: true })
-  lastUsedAt: Date | null;
-
   /**
    * Способ входа, которым была создана сессия (slug провайдера или 'password').
    * Нужен, чтобы при выходе знать, поддерживает ли провайдер RP-initiated logout.

@@ -1,10 +1,9 @@
-import { ExternalAccountLinker } from './external-account-linker.js';
+import { ExternalAccountLinker } from '../application/external-account-linker.js';
 
 function createUsersRepositoryMock() {
   return {
     findById: vi.fn(),
     findByEmail: vi.fn(),
-    findByProvider: vi.fn(),
     create: vi.fn(),
     save: vi.fn(),
   };
@@ -40,7 +39,6 @@ describe('ExternalAccountLinker', () => {
     vi.clearAllMocks();
     usersRepository.findById.mockResolvedValue(null);
     usersRepository.findByEmail.mockResolvedValue(null);
-    usersRepository.findByProvider.mockResolvedValue(null);
     identitiesRepository.findByProvider.mockResolvedValue(null);
     usersRepository.create.mockImplementation(
       async (data: Record<string, unknown>) => ({ id: 'user-1', ...data }),
@@ -128,35 +126,6 @@ describe('ExternalAccountLinker', () => {
     expect(user.firstName).toBe('Старое');
     expect(usersRepository.save).not.toHaveBeenCalled();
     expect(identitiesRepository.create).not.toHaveBeenCalled();
-  });
-
-  it('migrates a legacy provider/provider_sub link into external_identities', async () => {
-    const legacy = {
-      id: 'user-3',
-      email: 'user@example.com',
-      provider: 'authentik',
-      providerSub: 'sub-3',
-      firstName: null,
-      lastName: null,
-      displayName: null,
-    };
-    usersRepository.findByProvider.mockResolvedValue(legacy);
-
-    const user = await linker.link('authentik', {
-      sub: 'sub-3',
-      email: 'user@example.com',
-      firstName: null,
-      lastName: null,
-      displayName: null,
-    });
-
-    expect(user.id).toBe('user-3');
-    expect(identitiesRepository.create).toHaveBeenCalledWith({
-      userId: 'user-3',
-      provider: 'authentik',
-      providerSub: 'sub-3',
-    });
-    expect(usersRepository.save).not.toHaveBeenCalled();
   });
 
   it('links a provider to an account that already exists by email', async () => {

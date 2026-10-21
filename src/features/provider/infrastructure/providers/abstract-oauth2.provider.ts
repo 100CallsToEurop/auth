@@ -1,7 +1,7 @@
 import type { Request } from 'express';
 import type { Strategy as PassportStrategy } from 'passport';
 import OAuth2Strategy from 'passport-oauth2';
-import type { ExternalProfile } from '../../domain/external-profile.js';
+import type { ExternalProfile } from '../../../external/domain/external-profile.js';
 import { AbstractExternalProvider } from './abstract-external.provider.js';
 
 export interface OAuth2Endpoints {
@@ -59,21 +59,20 @@ export abstract class AbstractOAuth2Provider extends AbstractExternalProvider {
           },
           (
             req: Request,
-            accessToken: string,
+            _accessToken: string,
             _refreshToken: string,
-            _profile: unknown,
+            profile: unknown,
             verified: (
               err?: Error | null,
               user?: Express.User,
               info?: unknown,
             ) => void,
           ) => {
-            void fetchProfile(accessToken)
-              .then((profile) => dispatch(req, profile))
-              .then(
-                (user) => verified(null, user as unknown as Express.User),
-                (err: unknown) => verified(err as Error),
-              );
+            // профиль уже загружен через userProfile() — не запрашиваем повторно
+            void dispatch(req, profile).then(
+              (user) => verified(null, user as unknown as Express.User),
+              (err: unknown) => verified(err as Error),
+            );
           },
         );
       }

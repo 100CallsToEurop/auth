@@ -1,11 +1,4 @@
 import type { Strategy as PassportStrategy } from 'passport';
-import type { Request } from 'express';
-import type { User } from '../../../user/domain/user.entity.js';
-
-/** Имя strategy, зарегистрированное в passport. */
-export interface ExternalStrategyName {
-  slug: string;
-}
 
 /**
  * Внешний провайдер входа (Strategy): сам строит passport-стратегию и
@@ -29,10 +22,5 @@ export interface ExternalProvider {
    */
   logoutUrl?(returnTo?: string): string | null;
 }
-
-export type ExternalSyncVerify = (
-  req: Request,
-  profile: unknown,
-) => Promise<User>;
 
 export const EXTERNAL_PROVIDERS = 'EXTERNAL_PROVIDERS';

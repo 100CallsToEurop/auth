@@ -1,6 +1,6 @@
 import { RefreshTokensRepository } from '../repository/refresh-tokens.repository.js';
-import { SessionService } from './session.service.js';
-import { TokensService } from './tokens.service.js';
+import { SessionService } from '../application/session.service.js';
+import { TokensService } from '../application/tokens.service.js';
 
 describe('SessionService', () => {
   const tokensService = {
@@ -10,8 +10,6 @@ describe('SessionService', () => {
   };
   const refreshTokensRepository = {
     create: vi.fn().mockResolvedValue(undefined),
-    findByIdWithUser: vi.fn(),
-    remove: vi.fn(),
   };
 
   const service = new SessionService(

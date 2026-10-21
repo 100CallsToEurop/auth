@@ -15,11 +15,9 @@ import type { ExternalProfile } from '../domain/external-profile.js';
  *
  * 1. поиск по стабильному идентификатору (provider, sub) в
  *    external_identities;
- * 2. legacy-фолбэк: привязки, сохранённые в users.provider/provider_sub до
- *    мультилинка (переносятся в external_identities);
- * 3. поиск по email — вход в существующий аккаунт (например, созданного по
+ * 2. поиск по email — вход в существующий аккаунт (например, созданного по
  *    паролю) с привязкой нового провайдера;
- * 4. создание нового пользователя + привязка.
+ * 3. создание нового пользователя + привязка.
  *
  * ВАЖНО: сам по себе вход НЕ обновляет профиль (email/ФИО) — данные берутся
  * у провайдера только при явной синхронизации (syncProvider).
@@ -40,14 +38,6 @@ export class ExternalAccountLinker {
     let user = record
       ? await this.usersRepository.findById(record.userId)
       : null;
-
-    if (!user) {
-      const legacy = await this.usersRepository.findByProvider(provider, sub);
-      if (legacy) {
-        user = legacy;
-        await this.ensureIdentity(legacy.id, provider, sub);
-      }
-    }
 
     if (!user) {
       const email = this.requireEmail(provider, profile);

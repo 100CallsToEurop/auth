@@ -6,7 +6,7 @@ import {
   REFRESH_COOKIE,
   REFRESH_COOKIE_PATH,
   REFRESH_TOKEN_TTL_MS,
-} from '../../features/session/application/session.constants.js';
+} from '../../constants/session.constants.js';
 
 /** URL фронтенда для редиректов (OAuth callback, SSO-выход). */
 export function frontendUrl(configService: ConfigService): string {

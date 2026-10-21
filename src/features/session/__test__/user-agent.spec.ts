@@ -1,4 +1,4 @@
-import { describeDevice, parseDevice } from './user-agent.js';
+import { describeDevice, parseDevice } from '../application/user-agent.js';
 
 describe('parseDevice', () => {
   it('parses a desktop Chrome on macOS', () => {

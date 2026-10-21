@@ -1,4 +1,4 @@
-import type { ExternalProfile } from '../../domain/external-profile.js';
+import type { ExternalProfile } from '../../../external/domain/external-profile.js';
 import { AbstractOAuth2Provider } from './abstract-oauth2.provider.js';
 
 interface YandexUserInfo {

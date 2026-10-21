@@ -1,9 +1,9 @@
 import { ConfigService } from '@nestjs/config';
-import { ExternalAccountLinker } from '../../application/external-account-linker.js';
-import { AuthentikProvider } from './authentik.provider.js';
-import { YandexProvider } from './yandex.provider.js';
-import { GitHubProvider } from './github.provider.js';
-import { InvisionProvider } from './invision.provider.js';
+import { ExternalAccountLinker } from '../../external/application/external-account-linker.js';
+import { AuthentikProvider } from '../infrastructure/providers/authentik.provider.js';
+import { YandexProvider } from '../infrastructure/providers/yandex.provider.js';
+import { GitHubProvider } from '../infrastructure/providers/github.provider.js';
+import { InvisionProvider } from '../infrastructure/providers/invision.provider.js';
 
 function createConfigServiceMock(values: Record<string, string> = {}) {
   return {
