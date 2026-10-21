@@ -1,6 +1,6 @@
 import type { Strategy as PassportStrategy } from 'passport';
 import type { Request } from 'express';
-import type { User } from '../../../../user/domain/user.entity.js';
+import type { User } from '../../../user/domain/user.entity.js';
 
 /** Имя strategy, зарегистрированное в passport. */
 export interface ExternalStrategyName {

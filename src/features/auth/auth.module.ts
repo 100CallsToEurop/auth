@@ -1,27 +1,15 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { CqrsModule } from '@nestjs/cqrs';
-import { ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
 import { UserModule } from '../user/user.module.js';
 import { SessionModule } from '../session/session.module.js';
+import { ExternalModule } from '../external/external.module.js';
 import { AuthController } from './api/auth.controller.js';
-import { JwtAuthGuard } from './api/guards/jwt-auth.guard.js';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { LoginHandler } from './application/commands/login/login.handler.js';
 import { RegisterHandler } from './application/commands/register/register.handler.js';
 import { PasswordService } from './application/password.service.js';
-import { ExternalAccountLinker } from './external/application/external-account-linker.js';
-import { ExternalAuthGuard, ExternalSyncGuard } from './external/api/external-auth.guard.js';
-import { ExternalProvidersRegistry } from './external/infrastructure/external-providers.registry.js';
-import { ExternalStrategiesFactory } from './external/infrastructure/external-strategies.factory.js';
-import {
-  EXTERNAL_PROVIDERS,
-  type ExternalProvider,
-} from './external/infrastructure/providers/external-provider.js';
-import { AuthentikProvider } from './external/infrastructure/providers/authentik.provider.js';
-import { YandexProvider } from './external/infrastructure/providers/yandex.provider.js';
-import { GitHubProvider } from './external/infrastructure/providers/github.provider.js';
-import { InvisionProvider } from './external/infrastructure/providers/invision.provider.js';
 
 const COMMAND_HANDLERS = [RegisterHandler, LoginHandler];
 
@@ -29,33 +17,15 @@ const COMMAND_HANDLERS = [RegisterHandler, LoginHandler];
   imports: [
     CqrsModule,
     UserModule,
-    forwardRef(() => SessionModule),
+    SessionModule,
+    ExternalModule,
     PassportModule.register({ session: true }),
   ],
   controllers: [AuthController],
   providers: [
     ...COMMAND_HANDLERS,
     PasswordService,
-    ExternalAccountLinker,
-    ExternalProvidersRegistry,
-    ExternalStrategiesFactory,
-    ExternalAuthGuard,
-    ExternalSyncGuard,
-    {
-      provide: EXTERNAL_PROVIDERS,
-      inject: [ConfigService, ExternalAccountLinker],
-      useFactory: (
-        configService: ConfigService,
-        linker: ExternalAccountLinker,
-      ): ExternalProvider[] => [
-        new AuthentikProvider(configService, linker),
-        new YandexProvider(configService, linker),
-        new GitHubProvider(configService, linker),
-        new InvisionProvider(configService, linker),
-      ],
-    },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
-  exports: [ExternalProvidersRegistry],
 })
 export class AuthModule {}

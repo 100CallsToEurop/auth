@@ -32,12 +32,12 @@ import { CurrentUser } from '../../../common/decorators/current-user.decorator.j
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { Public } from '../../../common/decorators/public.decorator.js';
-import { ExternalAccountLinker } from '../external/application/external-account-linker.js';
+import { ExternalAccountLinker } from '../../external/application/external-account-linker.js';
 import {
   ExternalAuthGuard,
   ExternalSyncGuard,
-} from '../external/api/external-auth.guard.js';
-import { ExternalProvidersRegistry } from '../external/infrastructure/external-providers.registry.js';
+} from '../../external/api/external-auth.guard.js';
+import { ExternalProvidersRegistry } from '../../external/infrastructure/external-providers.registry.js';
 import { User } from '../../user/domain/user.entity.js';
 
 @Controller('auth')

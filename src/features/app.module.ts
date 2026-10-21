@@ -4,6 +4,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserModule } from './user/user.module.js';
 import { SessionModule } from './session/session.module.js';
+import { ExternalModule } from './external/external.module.js';
 import { AuthModule } from './auth/auth.module.js';
 
 // function parseBool(value: string | undefined, fallback: boolean): boolean {
@@ -35,6 +36,7 @@ import { AuthModule } from './auth/auth.module.js';
     JwtModule.register({ global: true }),
     AuthModule,
     SessionModule,
+    ExternalModule,
     UserModule,
   ],
   controllers: [],

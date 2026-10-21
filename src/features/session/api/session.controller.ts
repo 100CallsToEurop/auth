@@ -27,7 +27,7 @@ import { RefreshTokensRepository } from '../repository/refresh-tokens.repository
 import type { AuthUser } from '../../../common/decorators/current-user.decorator.js';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { Public } from '../../../common/decorators/public.decorator.js';
-import { ExternalProvidersRegistry } from '../../auth/external/infrastructure/external-providers.registry.js';
+import { ExternalProvidersRegistry } from '../../external/infrastructure/external-providers.registry.js';
 
 @Controller('auth')
 export class SessionController {
