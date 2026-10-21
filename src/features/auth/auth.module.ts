@@ -4,7 +4,6 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { PassportModule } from '@nestjs/passport';
 import { UserModule } from '../user/user.module.js';
 import { SessionModule } from '../session/session.module.js';
-import { ExternalModule } from '../external/external.module.js';
 import { AuthController } from './api/auth.controller.js';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard.js';
 import { LoginHandler } from './application/commands/login/login.handler.js';
@@ -18,7 +17,6 @@ const COMMAND_HANDLERS = [RegisterHandler, LoginHandler];
     CqrsModule,
     UserModule,
     SessionModule,
-    ExternalModule,
     PassportModule.register({ session: true }),
   ],
   controllers: [AuthController],

@@ -14,19 +14,18 @@ import type { Request, Response } from 'express';
 import {
   REFRESH_COOKIE,
   REFRESH_COOKIE_PATH,
-  REFRESH_TOKEN_TTL_MS,
 } from '../application/session.constants.js';
 import { LogoutCommand } from '../application/commands/logout/logout.command.js';
 import { LogoutAllCommand } from '../application/commands/logout-all/logout-all.command.js';
 import { RevokeSessionCommand } from '../application/commands/revoke-session/revoke-session.command.js';
 import { ListSessionsQuery } from '../application/queries/list-sessions/list-sessions.query.js';
 import { RefreshCommand } from '../application/commands/refresh/refresh.command.js';
-import type { IssuedSession } from '../application/session.service.js';
 import { TokensService } from '../application/tokens.service.js';
 import { RefreshTokensRepository } from '../repository/refresh-tokens.repository.js';
 import type { AuthUser } from '../../../common/decorators/current-user.decorator.js';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { Public } from '../../../common/decorators/public.decorator.js';
+import { frontendUrl, sessionResponse } from '../../../common/http/session-http.js';
 import { ExternalProvidersRegistry } from '../../external/infrastructure/external-providers.registry.js';
 
 @Controller('auth')
@@ -50,7 +49,7 @@ export class SessionController {
     const session = await this.commandBus.execute(
       new RefreshCommand(req.cookies?.[REFRESH_COOKIE]),
     );
-    return this.toResponse(session, res);
+    return sessionResponse(session, res, this.configService);
   }
 
   @Public()
@@ -132,7 +131,7 @@ export class SessionController {
     return (
       this.providersRegistry
         .require(provider)
-        .logoutUrl?.(this.frontendUrl()) ?? null
+        .logoutUrl?.(frontendUrl(this.configService)) ?? null
     );
   }
 
@@ -147,33 +146,5 @@ export class SessionController {
     }
     const provider = await this.refreshTokensRepository.findProviderById(jti);
     return this.providerLogoutUrl(provider);
-  }
-
-  private frontendUrl(): string {
-    return (
-      this.configService.get<string>('FRONTEND_URL') ||
-      'http://localhost:3000'
-    );
-  }
-
-  private setRefreshCookie(res: Response, token: string): void {
-    res.cookie(REFRESH_COOKIE, token, {
-      httpOnly: true,
-      secure: this.configService.get<string>('NODE_ENV') === 'production',
-      sameSite: 'lax',
-      path: REFRESH_COOKIE_PATH,
-      maxAge: REFRESH_TOKEN_TTL_MS,
-    });
-  }
-
-  private toResponse(
-    session: IssuedSession,
-    res: Response,
-  ): {
-    user: IssuedSession['user'];
-    accessToken: string;
-  } {
-    this.setRefreshCookie(res, session.refreshToken);
-    return { user: session.user, accessToken: session.accessToken };
   }
 }

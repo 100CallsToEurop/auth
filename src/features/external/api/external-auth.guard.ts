@@ -24,9 +24,8 @@ import { REFRESH_COOKIE } from '../../session/application/session.constants.js';
  * Callback (есть code/state): вызываем с callback, требуем user, кладём его
  * в req.user для контроллера.
  *
- * Слаг провайдера берётся из :provider маршрута либо выводится из пути
- * (алиасы /auth/oidc/<slug>). Guard — обычный @Injectable класс с DI, чтобы
- * Nest корректно его инстанцировал.
+ * Слаг провайдера берётся из :provider маршрута. Guard — обычный @Injectable
+ * класс с DI, чтобы Nest корректно его инстанцировал.
  */
 @Injectable()
 export class ExternalAuthGuard implements CanActivate {
@@ -135,25 +134,10 @@ export class ExternalAuthGuard implements CanActivate {
     return user;
   }
 
-  /**
-   * Слаг провайдера: сначала :provider из маршрута, иначе последний сегмент
-   * пути до /callback (для алиасов вида /auth/oidc/authentik[/callback]).
-   */
+  /** Слаг провайдера из маршрута (:provider). */
   private resolveSlug(request: Request): string | null {
     const param = request.params?.provider;
-    if (typeof param === 'string' && param.length > 0) {
-      return param;
-    }
-    const path = (request.path || request.originalUrl || '').split('?')[0];
-    const segments = path.split('/').filter(Boolean);
-    // /api/auth/oidc/<slug>[/callback]
-    const markerIndex = segments.lastIndexOf('oidc');
-    const candidate =
-      markerIndex >= 0 ? segments[markerIndex + 1] : undefined;
-    if (candidate && candidate !== 'callback') {
-      return candidate;
-    }
-    return null;
+    return typeof param === 'string' && param.length > 0 ? param : null;
   }
 
   private describe(info: unknown): string {

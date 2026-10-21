@@ -1,4 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
+import { CqrsModule } from '@nestjs/cqrs';
 import { ConfigService } from '@nestjs/config';
 import { UserModule } from '../user/user.module.js';
 import { SessionModule } from '../session/session.module.js';
@@ -7,6 +8,7 @@ import {
   ExternalAuthGuard,
   ExternalSyncGuard,
 } from './api/external-auth.guard.js';
+import { ExternalController } from './api/external.controller.js';
 import { ExternalProvidersRegistry } from './infrastructure/external-providers.registry.js';
 import { ExternalStrategiesFactory } from './infrastructure/external-strategies.factory.js';
 import {
@@ -19,7 +21,8 @@ import { GitHubProvider } from './infrastructure/providers/github.provider.js';
 import { InvisionProvider } from './infrastructure/providers/invision.provider.js';
 
 @Module({
-  imports: [UserModule, forwardRef(() => SessionModule)],
+  imports: [CqrsModule, UserModule, forwardRef(() => SessionModule)],
+  controllers: [ExternalController],
   providers: [
     ExternalAccountLinker,
     ExternalProvidersRegistry,
