@@ -10,6 +10,7 @@ function createRepositoryMock() {
   return {
     findByUserId: vi.fn(),
     removeAllByUserId: vi.fn(),
+    removeAllByUserIdExcept: vi.fn(),
     removeByIdForUser: vi.fn(),
   };
 }
@@ -21,13 +22,28 @@ describe('LogoutAllHandler', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     repository.removeAllByUserId.mockResolvedValue(3);
+    repository.removeAllByUserIdExcept.mockResolvedValue(2);
   });
 
   it('revokes every session of the user', async () => {
     const result = await handler.execute(new LogoutAllCommand('user-1', 'jti-1'));
 
     expect(repository.removeAllByUserId).toHaveBeenCalledWith('user-1');
+    expect(repository.removeAllByUserIdExcept).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: true, revoked: 3 });
+  });
+
+  it('keeps the current session when exceptCurrent is set', async () => {
+    const result = await handler.execute(
+      new LogoutAllCommand('user-1', 'jti-1', true),
+    );
+
+    expect(repository.removeAllByUserIdExcept).toHaveBeenCalledWith(
+      'user-1',
+      'jti-1',
+    );
+    expect(repository.removeAllByUserId).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: true, revoked: 2 });
   });
 
   it('requires a user id', async () => {

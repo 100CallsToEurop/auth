@@ -10,14 +10,22 @@ export class LogoutAllHandler implements ICommandHandler<LogoutAllCommand> {
     private readonly refreshTokensRepository: RefreshTokensRepository,
   ) {}
 
-  async execute(command: LogoutAllCommand): Promise<{ ok: true; revoked: number }> {
+  async execute(
+    command: LogoutAllCommand,
+  ): Promise<{ ok: true; revoked: number }> {
     if (!command.userId) {
       throw new UnauthorizedException();
     }
 
-    const revoked = await this.refreshTokensRepository.removeAllByUserId(
-      command.userId,
-    );
+    // «Завершить другие сессии» — сохраняем текущую, если её jti известен.
+    const revoked =
+      command.exceptCurrent && command.currentSessionId
+        ? await this.refreshTokensRepository.removeAllByUserIdExcept(
+            command.userId,
+            command.currentSessionId,
+          )
+        : await this.refreshTokensRepository.removeAllByUserId(command.userId);
+
     return { ok: true, revoked };
   }
 }

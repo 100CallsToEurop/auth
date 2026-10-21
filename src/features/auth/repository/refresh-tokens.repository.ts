@@ -61,4 +61,22 @@ export class RefreshTokensRepository {
     const result = await this.repository.delete({ userId });
     return result.affected ?? 0;
   }
+
+  /**
+   * Отзывает все сессии пользователя, КРОМЕ указанной (текущей) — «завершить
+   * другие сессии», оставаясь в этой.
+   */
+  async removeAllByUserIdExcept(
+    userId: string,
+    exceptId: string,
+  ): Promise<number> {
+    const result = await this.repository
+      .createQueryBuilder()
+      .delete()
+      .from(RefreshToken)
+      .where('user_id = :userId', { userId })
+      .andWhere('id != :exceptId', { exceptId })
+      .execute();
+    return result.affected ?? 0;
+  }
 }

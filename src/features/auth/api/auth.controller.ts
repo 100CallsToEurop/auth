@@ -129,6 +129,18 @@ export class AuthController {
     return { ...result, logoutUrl: this.providerLogoutUrl(provider) };
   }
 
+  // Завершить все ДРУГИЕ сессии, оставив текущую (без разлогина).
+  @Post('sessions/revoke-others')
+  @HttpCode(200)
+  async revokeOtherSessions(
+    @CurrentUser() user: AuthUser,
+    @Req() req: Request,
+  ) {
+    return this.commandBus.execute(
+      new LogoutAllCommand(user.id, await this.currentJti(req), true),
+    );
+  }
+
   // Список активных сессий (устройств) текущего пользователя.
   @Get('sessions')
   async listSessions(@CurrentUser() user: AuthUser, @Req() req: Request) {
