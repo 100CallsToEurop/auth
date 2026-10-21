@@ -6,7 +6,6 @@ import {
   HttpCode,
   Param,
   Post,
-  Query,
   Req,
   Res,
   UnauthorizedException,
@@ -42,6 +41,7 @@ import {
 import { ExternalProvidersRegistry } from '../external/infrastructure/external-providers.registry.js';
 import { SessionService, type SessionMeta } from '../application/session.service.js';
 import { TokensService } from '../application/tokens.service.js';
+import { RefreshTokensRepository } from '../repository/refresh-tokens.repository.js';
 import { User } from '../../user/domain/user.entity.js';
 
 @Controller('auth')
@@ -54,6 +54,7 @@ export class AuthController {
     private readonly tokensService: TokensService,
     private readonly providersRegistry: ExternalProvidersRegistry,
     private readonly linker: ExternalAccountLinker,
+    private readonly refreshTokensRepository: RefreshTokensRepository,
   ) {}
 
   @Public()
@@ -102,15 +103,16 @@ export class AuthController {
   async logout(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
-    @Query('provider') provider?: string,
   ) {
+    // Провайдер берём из текущей сессии (каким способом вошли), а не из query.
+    const logoutUrl = await this.sessionProviderLogoutUrl(req);
     const result = await this.commandBus.execute(
       new LogoutCommand(req.cookies?.[REFRESH_COOKIE]),
     );
     res.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
-    // RP-initiated logout: если указан OIDC-провайдер, отдаём URL для выхода
-    // и из его SSO-сессии (фронт перейдёт по нему).
-    return { ...result, logoutUrl: this.providerLogoutUrl(provider) };
+    // RP-initiated logout: если текущая сессия из OIDC-провайдера, отдаём URL
+    // для выхода и из его SSO-сессии (фронт перейдёт по нему).
+    return { ...result, logoutUrl };
   }
 
   // Выход со ВСЕХ устройств: отзывает все refresh-сессии пользователя.
@@ -120,13 +122,13 @@ export class AuthController {
     @CurrentUser() user: AuthUser,
     @Res({ passthrough: true }) res: Response,
     @Req() req: Request,
-    @Query('provider') provider?: string,
   ) {
+    const logoutUrl = await this.sessionProviderLogoutUrl(req);
     const result = await this.commandBus.execute(
       new LogoutAllCommand(user.id, await this.currentJti(req)),
     );
     res.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
-    return { ...result, logoutUrl: this.providerLogoutUrl(provider) };
+    return { ...result, logoutUrl };
   }
 
   // Завершить все ДРУГИЕ сессии, оставив текущую (без разлогина).
@@ -230,7 +232,11 @@ export class AuthController {
     if (!user?.id) {
       throw new UnauthorizedException('External provider did not return a user');
     }
-    const session = await this.sessionService.start(user);
+    const provider = this.externalProviderSlug(req);
+    const session = await this.sessionService.start(
+      user,
+      this.sessionMeta(req, provider),
+    );
     this.setRefreshCookie(res, session.refreshToken);
     return res.redirect(this.frontendUrl());
   }
@@ -243,7 +249,7 @@ export class AuthController {
   }
 
   /** Метаданные клиента для списка активных сессий. */
-  private sessionMeta(req: Request): SessionMeta {
+  private sessionMeta(req: Request, provider = 'password'): SessionMeta {
     const forwarded = req.headers['x-forwarded-for'];
     const forwardedIp = Array.isArray(forwarded)
       ? forwarded[0]
@@ -251,7 +257,21 @@ export class AuthController {
     return {
       userAgent: req.headers['user-agent']?.slice(0, 512) ?? null,
       ip: (forwardedIp?.trim() || req.ip) ?? null,
+      provider,
     };
+  }
+
+  /** Слаг провайдера из запроса: :provider или алиас /auth/oidc/<slug>. */
+  private externalProviderSlug(req: Request): string {
+    const param = req.params?.provider;
+    if (typeof param === 'string' && param.length > 0) {
+      return param;
+    }
+    const path = (req.path || req.originalUrl || '').split('?')[0];
+    const segments = path.split('/').filter(Boolean);
+    const markerIndex = segments.lastIndexOf('oidc');
+    const candidate = markerIndex >= 0 ? segments[markerIndex + 1] : undefined;
+    return candidate && candidate !== 'callback' ? candidate : 'external';
   }
 
   /** jti текущей сессии из refresh-cookie (для пометки «текущая»). */
@@ -265,13 +285,29 @@ export class AuthController {
   }
 
   /** URL выхода из SSO-сессии провайдера (если поддерживается). */
-  private providerLogoutUrl(provider?: string): string | null {
+  private providerLogoutUrl(provider?: string | null): string | null {
     if (!provider || !this.providersRegistry.has(provider)) {
       return null;
     }
-    return this.providersRegistry
-      .require(provider)
-      .logoutUrl?.(this.frontendUrl()) ?? null;
+    return (
+      this.providersRegistry
+        .require(provider)
+        .logoutUrl?.(this.frontendUrl()) ?? null
+    );
+  }
+
+  /**
+   * URL SSO-выхода для ТЕКУЩЕЙ сессии: определяем, каким способом она была
+   * создана (provider из refresh_tokens), и берём logoutUrl этого провайдера.
+   */
+  private async sessionProviderLogoutUrl(req: Request): Promise<string | null> {
+    const jti = await this.currentJti(req);
+    if (!jti) {
+      return null;
+    }
+    const provider =
+      await this.refreshTokensRepository.findProviderById(jti);
+    return this.providerLogoutUrl(provider);
   }
 
   private setRefreshCookie(res: Response, token: string): void {

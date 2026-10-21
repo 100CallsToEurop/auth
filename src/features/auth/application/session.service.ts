@@ -18,6 +18,8 @@ export interface SessionUserInput {
 export interface SessionMeta {
   userAgent?: string | null;
   ip?: string | null;
+  /** Способ входа: slug провайдера ('authentik', 'yandex', …) или 'password'. */
+  provider?: string | null;
 }
 
 export interface SessionResponse {
@@ -58,6 +60,7 @@ export class SessionService {
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
       userAgent: meta.userAgent ?? null,
       ip: meta.ip ?? null,
+      provider: meta.provider ?? null,
     });
 
     return {

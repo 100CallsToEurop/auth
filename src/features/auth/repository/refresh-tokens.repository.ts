@@ -10,6 +10,7 @@ export interface CreateRefreshTokenData {
   expiresAt: Date;
   userAgent?: string | null;
   ip?: string | null;
+  provider?: string | null;
 }
 
 @Injectable()
@@ -44,6 +45,15 @@ export class RefreshTokensRepository {
 
   async touch(id: string): Promise<void> {
     await this.repository.update({ id }, { lastUsedAt: new Date() });
+  }
+
+  /** Провайдер, которым была создана сессия (для выбора SSO-logout). */
+  async findProviderById(id: string): Promise<string | null> {
+    const record = await this.repository.findOne({
+      where: { id },
+      select: { id: true, provider: true },
+    });
+    return record?.provider ?? null;
   }
 
   async remove(id: string): Promise<void> {

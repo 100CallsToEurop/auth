@@ -47,6 +47,7 @@ export class RefreshHandler implements ICommandHandler<RefreshCommand> {
     return this.sessionService.start(record.user, {
       userAgent: record.userAgent,
       ip: record.ip,
+      provider: record.provider,
     });
   }
 }

@@ -62,12 +62,13 @@ describe('SessionService', () => {
   it('persists client metadata for the active sessions list', async () => {
     await service.start(
       { id: 'user-1', email: 'a@b.c' },
-      { userAgent: 'Firefox/120', ip: '1.2.3.4' },
+      { userAgent: 'Firefox/120', ip: '1.2.3.4', provider: 'authentik' },
     );
 
     const record = refreshTokensRepository.create.mock.calls[0][0];
     expect(record.userAgent).toBe('Firefox/120');
     expect(record.ip).toBe('1.2.3.4');
+    expect(record.provider).toBe('authentik');
   });
 
   it('defaults metadata to null when omitted', async () => {
@@ -76,5 +77,6 @@ describe('SessionService', () => {
     const record = refreshTokensRepository.create.mock.calls[0][0];
     expect(record.userAgent).toBeNull();
     expect(record.ip).toBeNull();
+    expect(record.provider).toBeNull();
   });
 });
