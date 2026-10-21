@@ -23,6 +23,11 @@ export interface ExternalProvider {
   createStrategy(): PassportStrategy;
   /** Хук после создания стратегии (например, OIDC discovery). */
   init?(strategy: PassportStrategy): Promise<void>;
+  /**
+   * URL RP-initiated logout у провайдера (OIDC end_session_endpoint).
+   * Возвращает null, если провайдер не поддерживает выход из SSO-сессии.
+   */
+  logoutUrl?(returnTo?: string): string | null;
 }
 
 export type ExternalSyncVerify = (

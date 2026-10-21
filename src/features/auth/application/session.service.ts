@@ -14,6 +14,12 @@ export interface SessionUserInput {
   displayName?: string | null;
 }
 
+/** Метаданные клиента для отображения в списке активных сессий. */
+export interface SessionMeta {
+  userAgent?: string | null;
+  ip?: string | null;
+}
+
 export interface SessionResponse {
   user: {
     id: string;
@@ -36,7 +42,7 @@ export class SessionService {
     private readonly refreshTokensRepository: RefreshTokensRepository,
   ) {}
 
-  async start(user: SessionUserInput): Promise<IssuedSession> {
+  async start(user: SessionUserInput, meta: SessionMeta = {}): Promise<IssuedSession> {
     const accessToken = await this.tokensService.signAccess(
       user.id,
       user.email,
@@ -50,6 +56,8 @@ export class SessionService {
       userId: user.id,
       tokenHash: this.tokensService.hashToken(refreshToken),
       expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      userAgent: meta.userAgent ?? null,
+      ip: meta.ip ?? null,
     });
 
     return {

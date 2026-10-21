@@ -42,6 +42,11 @@ export class RefreshHandler implements ICommandHandler<RefreshCommand> {
 
     await this.refreshTokensRepository.remove(record.id);
 
-    return this.sessionService.start(record.user);
+    // переносим метаданные устройства в новую сессию (ротация токена —
+    // это та же сессия пользователя)
+    return this.sessionService.start(record.user, {
+      userAgent: record.userAgent,
+      ip: record.ip,
+    });
   }
 }

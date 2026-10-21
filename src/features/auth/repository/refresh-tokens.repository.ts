@@ -3,6 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RefreshToken } from '../domain/refresh-token.entity.js';
 
+export interface CreateRefreshTokenData {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  expiresAt: Date;
+  userAgent?: string | null;
+  ip?: string | null;
+}
+
 @Injectable()
 export class RefreshTokensRepository {
   constructor(
@@ -20,17 +29,36 @@ export class RefreshTokensRepository {
     });
   }
 
-  create(data: {
-    id: string;
-    userId: string;
-    tokenHash: string;
-    expiresAt: Date;
-  }): Promise<RefreshToken> {
+  /** Все активные refresh-сессии пользователя (свежие — первыми). */
+  findByUserId(userId: string): Promise<RefreshToken[]> {
+    return this.repository.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  create(data: CreateRefreshTokenData): Promise<RefreshToken> {
     const record = this.repository.create(data);
     return this.repository.save(record);
   }
 
+  async touch(id: string): Promise<void> {
+    await this.repository.update({ id }, { lastUsedAt: new Date() });
+  }
+
   async remove(id: string): Promise<void> {
     await this.repository.delete({ id });
+  }
+
+  /** Отзывает одну сессию, но только если она принадлежит пользователю. */
+  async removeByIdForUser(id: string, userId: string): Promise<boolean> {
+    const result = await this.repository.delete({ id, userId });
+    return (result.affected ?? 0) > 0;
+  }
+
+  /** Отзывает все сессии пользователя (выход со всех устройств). */
+  async removeAllByUserId(userId: string): Promise<number> {
+    const result = await this.repository.delete({ userId });
+    return result.affected ?? 0;
   }
 }

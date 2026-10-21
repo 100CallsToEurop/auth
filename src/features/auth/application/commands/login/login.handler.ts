@@ -29,6 +29,6 @@ export class LoginHandler implements ICommandHandler<LoginCommand> {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    return this.sessionService.start(user);
+    return this.sessionService.start(user, command.meta);
   }
 }

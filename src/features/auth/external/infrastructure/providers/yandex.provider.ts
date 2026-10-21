@@ -20,10 +20,12 @@ export class YandexProvider extends AbstractOAuth2Provider {
   readonly slug = 'yandex';
   readonly displayName = 'Яндекс';
 
-  protected override readonly endpoints = {
-    authorizationURL: 'https://oauth.yandex.ru/authorize',
-    tokenURL: 'https://oauth.yandex.ru/token',
-  };
+  protected override get endpoints() {
+    return {
+      authorizationURL: 'https://oauth.yandex.ru/authorize',
+      tokenURL: 'https://oauth.yandex.ru/token',
+    };
+  }
 
   protected override readonly defaultScopes = 'login:info login:email';
 

@@ -86,7 +86,10 @@ describe('RegisterHandler', () => {
     const { passwordHash } = usersRepository.create.mock.calls[0][0];
     expect(passwordHash).not.toBe('password123');
     expect(await bcrypt.compare('password123', passwordHash)).toBe(true);
-    expect(sessionService.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1', email: 'test@example.com' }));
+    expect(sessionService.start).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-1', email: 'test@example.com' }),
+      {},
+    );
     expect(result).toEqual(SESSION);
   });
 
@@ -126,7 +129,10 @@ describe('RegisterHandler', () => {
     expect(await bcrypt.compare('password123', saved.passwordHash)).toBe(true);
     expect(authentikUser.provider).toBe('authentik');
     expect(authentikUser.providerSub).toBe('sub-1');
-    expect(sessionService.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-9', email: 'a@b.c' }));
+    expect(sessionService.start).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-9', email: 'a@b.c' }),
+      {},
+    );
     expect(result).toEqual(SESSION);
   });
 });
@@ -178,7 +184,10 @@ describe('LoginHandler', () => {
       new LoginCommand('A@B.C', 'password123'),
     );
 
-    expect(sessionService.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1', email: 'a@b.c' }));
+    expect(sessionService.start).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-1', email: 'a@b.c' }),
+      {},
+    );
     expect(result).toEqual(SESSION);
   });
 });
@@ -214,7 +223,10 @@ describe('RefreshHandler', () => {
     const result = await handler.execute(new RefreshCommand(rawToken));
 
     expect(refreshTokensRepository.remove).toHaveBeenCalledWith(jti);
-    expect(sessionService.start).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1', email: 'a@b.c' }));
+    expect(sessionService.start).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-1', email: 'a@b.c' }),
+      { userAgent: undefined, ip: undefined },
+    );
     expect(result).toEqual(SESSION);
   });
 

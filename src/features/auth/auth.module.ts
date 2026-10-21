@@ -8,6 +8,9 @@ import { AuthController } from './api/auth.controller.js';
 import { JwtAuthGuard } from './api/guards/jwt-auth.guard.js';
 import { LoginHandler } from './application/commands/login/login.handler.js';
 import { LogoutHandler } from './application/commands/logout/logout.handler.js';
+import { LogoutAllHandler } from './application/commands/logout-all/logout-all.handler.js';
+import { RevokeSessionHandler } from './application/commands/revoke-session/revoke-session.handler.js';
+import { ListSessionsHandler } from './application/queries/list-sessions/list-sessions.handler.js';
 import { RefreshHandler } from './application/commands/refresh/refresh.handler.js';
 import { RegisterHandler } from './application/commands/register/register.handler.js';
 import { PasswordService } from './application/password.service.js';
@@ -27,12 +30,16 @@ import {
 import { AuthentikProvider } from './external/infrastructure/providers/authentik.provider.js';
 import { YandexProvider } from './external/infrastructure/providers/yandex.provider.js';
 import { GitHubProvider } from './external/infrastructure/providers/github.provider.js';
+import { InvisionProvider } from './external/infrastructure/providers/invision.provider.js';
 
 const COMMAND_HANDLERS = [
   RegisterHandler,
   LoginHandler,
   RefreshHandler,
   LogoutHandler,
+  LogoutAllHandler,
+  RevokeSessionHandler,
+  ListSessionsHandler,
 ];
 
 @Module({
@@ -64,6 +71,7 @@ const COMMAND_HANDLERS = [
         new AuthentikProvider(configService, linker),
         new YandexProvider(configService, linker),
         new GitHubProvider(configService, linker),
+        new InvisionProvider(configService, linker),
       ],
     },
     { provide: APP_GUARD, useClass: JwtAuthGuard },

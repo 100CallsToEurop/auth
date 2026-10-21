@@ -29,7 +29,7 @@ export class RegisterHandler implements ICommandHandler<RegisterCommand> {
     if (existing) {
       existing.passwordHash = passwordHash;
       const user = await this.usersRepository.save(existing);
-      return this.sessionService.start(user);
+      return this.sessionService.start(user, command.meta);
     }
 
     const user = await this.usersRepository.create({
@@ -37,6 +37,6 @@ export class RegisterHandler implements ICommandHandler<RegisterCommand> {
       passwordHash,
     });
 
-    return this.sessionService.start(user);
+    return this.sessionService.start(user, command.meta);
   }
 }

@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Query,
   Req,
   Res,
   UnauthorizedException,
@@ -21,6 +22,9 @@ import {
 } from '../application/auth.constants.js';
 import { LoginCommand } from '../application/commands/login/login.command.js';
 import { LogoutCommand } from '../application/commands/logout/logout.command.js';
+import { LogoutAllCommand } from '../application/commands/logout-all/logout-all.command.js';
+import { RevokeSessionCommand } from '../application/commands/revoke-session/revoke-session.command.js';
+import { ListSessionsQuery } from '../application/queries/list-sessions/list-sessions.query.js';
 import { RefreshCommand } from '../application/commands/refresh/refresh.command.js';
 import { RegisterCommand } from '../application/commands/register/register.command.js';
 import { GetCurrentUserQuery } from '../../user/application/queries/get-current-user/get-current-user.query.js';
@@ -36,7 +40,8 @@ import {
   ExternalSyncGuard,
 } from '../external/api/external-auth.guard.js';
 import { ExternalProvidersRegistry } from '../external/infrastructure/external-providers.registry.js';
-import { SessionService } from '../application/session.service.js';
+import { SessionService, type SessionMeta } from '../application/session.service.js';
+import { TokensService } from '../application/tokens.service.js';
 import { User } from '../../user/domain/user.entity.js';
 
 @Controller('auth')
@@ -46,6 +51,7 @@ export class AuthController {
     private readonly queryBus: QueryBus,
     private readonly configService: ConfigService,
     private readonly sessionService: SessionService,
+    private readonly tokensService: TokensService,
     private readonly providersRegistry: ExternalProvidersRegistry,
     private readonly linker: ExternalAccountLinker,
   ) {}
@@ -54,10 +60,11 @@ export class AuthController {
   @Post('register')
   async register(
     @Body() dto: RegisterDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const session = await this.commandBus.execute(
-      new RegisterCommand(dto.email, dto.password),
+      new RegisterCommand(dto.email, dto.password, this.sessionMeta(req)),
     );
     return this.toResponse(session, res);
   }
@@ -67,10 +74,11 @@ export class AuthController {
   @HttpCode(200)
   async login(
     @Body() dto: LoginDto,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const session = await this.commandBus.execute(
-      new LoginCommand(dto.email, dto.password),
+      new LoginCommand(dto.email, dto.password, this.sessionMeta(req)),
     );
     return this.toResponse(session, res);
   }
@@ -91,12 +99,50 @@ export class AuthController {
   @Public()
   @Post('logout')
   @HttpCode(200)
-  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Query('provider') provider?: string,
+  ) {
     const result = await this.commandBus.execute(
       new LogoutCommand(req.cookies?.[REFRESH_COOKIE]),
     );
     res.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
-    return result;
+    // RP-initiated logout: если указан OIDC-провайдер, отдаём URL для выхода
+    // и из его SSO-сессии (фронт перейдёт по нему).
+    return { ...result, logoutUrl: this.providerLogoutUrl(provider) };
+  }
+
+  // Выход со ВСЕХ устройств: отзывает все refresh-сессии пользователя.
+  @Post('logout/all')
+  @HttpCode(200)
+  async logoutAll(
+    @CurrentUser() user: AuthUser,
+    @Res({ passthrough: true }) res: Response,
+    @Req() req: Request,
+    @Query('provider') provider?: string,
+  ) {
+    const result = await this.commandBus.execute(
+      new LogoutAllCommand(user.id, await this.currentJti(req)),
+    );
+    res.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
+    return { ...result, logoutUrl: this.providerLogoutUrl(provider) };
+  }
+
+  // Список активных сессий (устройств) текущего пользователя.
+  @Get('sessions')
+  async listSessions(@CurrentUser() user: AuthUser, @Req() req: Request) {
+    const currentSessionId = await this.currentJti(req);
+    return this.queryBus.execute(new ListSessionsQuery(user.id, currentSessionId));
+  }
+
+  // Отзыв одной сессии по id.
+  @Delete('sessions/:id')
+  revokeSession(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+  ) {
+    return this.commandBus.execute(new RevokeSessionCommand(id, user.id));
   }
 
   @Get('me')
@@ -182,6 +228,38 @@ export class AuthController {
       this.configService.get<string>('FRONTEND_URL') ||
       'http://localhost:3000'
     );
+  }
+
+  /** Метаданные клиента для списка активных сессий. */
+  private sessionMeta(req: Request): SessionMeta {
+    const forwarded = req.headers['x-forwarded-for'];
+    const forwardedIp = Array.isArray(forwarded)
+      ? forwarded[0]
+      : forwarded?.split(',')[0];
+    return {
+      userAgent: req.headers['user-agent']?.slice(0, 512) ?? null,
+      ip: (forwardedIp?.trim() || req.ip) ?? null,
+    };
+  }
+
+  /** jti текущей сессии из refresh-cookie (для пометки «текущая»). */
+  private async currentJti(req: Request): Promise<string | undefined> {
+    const token = req.cookies?.[REFRESH_COOKIE];
+    if (!token) {
+      return undefined;
+    }
+    const payload = await this.tokensService.verifyRefresh(token);
+    return payload?.jti;
+  }
+
+  /** URL выхода из SSO-сессии провайдера (если поддерживается). */
+  private providerLogoutUrl(provider?: string): string | null {
+    if (!provider || !this.providersRegistry.has(provider)) {
+      return null;
+    }
+    return this.providersRegistry
+      .require(provider)
+      .logoutUrl?.(this.frontendUrl()) ?? null;
   }
 
   private setRefreshCookie(res: Response, token: string): void {

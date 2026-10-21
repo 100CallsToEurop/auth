@@ -17,7 +17,7 @@ export interface OAuth2Endpoints {
 export abstract class AbstractOAuth2Provider extends AbstractExternalProvider {
   abstract readonly slug: string;
   abstract readonly displayName: string;
-  protected abstract readonly endpoints: OAuth2Endpoints;
+  protected abstract get endpoints(): OAuth2Endpoints;
   protected abstract readonly defaultScopes: string;
   /** Доп. заголовки запросов token exchange (например, Accept: json). */
   protected readonly headers: Record<string, string> = {};

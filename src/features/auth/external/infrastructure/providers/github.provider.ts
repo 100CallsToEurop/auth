@@ -23,10 +23,12 @@ export class GitHubProvider extends AbstractOAuth2Provider {
   readonly slug = 'github';
   readonly displayName = 'GitHub';
 
-  protected override readonly endpoints = {
-    authorizationURL: 'https://github.com/login/oauth/authorize',
-    tokenURL: 'https://github.com/login/oauth/access_token',
-  };
+  protected override get endpoints() {
+    return {
+      authorizationURL: 'https://github.com/login/oauth/authorize',
+      tokenURL: 'https://github.com/login/oauth/access_token',
+    };
+  }
 
   protected override readonly defaultScopes = 'read:user user:email';
 

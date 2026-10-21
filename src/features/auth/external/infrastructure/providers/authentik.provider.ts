@@ -19,6 +19,7 @@ interface OpenIdConfiguration {
   authorization_endpoint?: string;
   token_endpoint?: string;
   userinfo_endpoint?: string;
+  end_session_endpoint?: string;
 }
 
 type OIDCStrategyInternals = {
@@ -39,6 +40,9 @@ export class AuthentikProvider extends AbstractExternalProvider {
   readonly displayName = 'Authentik';
 
   private readonly logger = new Logger(AuthentikProvider.name);
+
+  /** end_session_endpoint из OIDC discovery (для RP-initiated logout). */
+  private endSessionEndpoint: string | null = null;
 
   createStrategy(): PassportStrategy {
     const dispatch = this.dispatchFn();
@@ -122,6 +126,9 @@ export class AuthentikProvider extends AbstractExternalProvider {
     if (doc.userinfo_endpoint) {
       internals._userInfoURL = doc.userinfo_endpoint;
     }
+    if (doc.end_session_endpoint) {
+      this.endSessionEndpoint = doc.end_session_endpoint;
+    }
 
     this.logger.log(
       `OIDC: issuer=${internals._issuer}, authorize=${internals._oauth2._authorizeUrl}, ` +
@@ -141,6 +148,27 @@ export class AuthentikProvider extends AbstractExternalProvider {
         this.configService.get<string>('AUTHENTIK_CLIENT_SECRET') &&
         this.configService.get<string>('AUTHENTIK_ISSUER'),
     );
+  }
+
+  /**
+   * RP-initiated logout Authentik: завершает и SSO-сессию в Authentik, а не
+   * только локальную. Использует end_session_endpoint из discovery; при
+   * недоступности discovery — выводит его из issuer.
+   */
+  logoutUrl(returnTo?: string): string | null {
+    let endpoint = this.endSessionEndpoint;
+    if (!endpoint) {
+      const issuer = this.configService.get<string>('AUTHENTIK_ISSUER');
+      if (!issuer) {
+        return null;
+      }
+      endpoint = `${issuer.replace(/\/?$/, '/')}end-session/`;
+    }
+    const url = new URL(endpoint);
+    if (returnTo) {
+      url.searchParams.set('post_logout_redirect_uri', returnTo);
+    }
+    return url.toString();
   }
 
   static normalizeProfile(profile: AuthentikOidcProfile): ExternalProfile {

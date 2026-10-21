@@ -58,4 +58,23 @@ describe('SessionService', () => {
     expect(record.tokenHash).toBe('hash:refresh-token');
     expect(record.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
+
+  it('persists client metadata for the active sessions list', async () => {
+    await service.start(
+      { id: 'user-1', email: 'a@b.c' },
+      { userAgent: 'Firefox/120', ip: '1.2.3.4' },
+    );
+
+    const record = refreshTokensRepository.create.mock.calls[0][0];
+    expect(record.userAgent).toBe('Firefox/120');
+    expect(record.ip).toBe('1.2.3.4');
+  });
+
+  it('defaults metadata to null when omitted', async () => {
+    await service.start({ id: 'user-1', email: 'a@b.c' });
+
+    const record = refreshTokensRepository.create.mock.calls[0][0];
+    expect(record.userAgent).toBeNull();
+    expect(record.ip).toBeNull();
+  });
 });

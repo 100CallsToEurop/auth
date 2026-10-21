@@ -3,6 +3,7 @@ import { ExternalAccountLinker } from '../../application/external-account-linker
 import { AuthentikProvider } from './authentik.provider.js';
 import { YandexProvider } from './yandex.provider.js';
 import { GitHubProvider } from './github.provider.js';
+import { InvisionProvider } from './invision.provider.js';
 
 function createConfigServiceMock(values: Record<string, string> = {}) {
   return {
@@ -55,6 +56,33 @@ describe('AuthentikProvider', () => {
       linker,
     );
     expect(disabled.configured()).toBe(false);
+  });
+
+  it('builds the RP-initiated logout URL from the issuer', () => {
+    const linker = {} as ExternalAccountLinker;
+    const provider = new AuthentikProvider(
+      createConfigServiceMock({
+        AUTHENTIK_ISSUER: 'http://idp/application/o/app/',
+      }) as unknown as ConfigService,
+      linker,
+    );
+
+    const url = new URL(provider.logoutUrl('https://app.example.com/')!);
+    expect(url.origin + url.pathname).toBe(
+      'http://idp/application/o/app/end-session/',
+    );
+    expect(url.searchParams.get('post_logout_redirect_uri')).toBe(
+      'https://app.example.com/',
+    );
+  });
+
+  it('has no logout URL without an issuer', () => {
+    const linker = {} as ExternalAccountLinker;
+    const provider = new AuthentikProvider(
+      createConfigServiceMock({}) as unknown as ConfigService,
+      linker,
+    );
+    expect(provider.logoutUrl()).toBeNull();
   });
 });
 
@@ -116,5 +144,60 @@ describe('GitHubProvider', () => {
     expect(provider.callbackUrl()).toBe(
       'https://auth.example.com/api/auth/external/github/callback',
     );
+  });
+});
+
+describe('InvisionProvider', () => {
+  it('normalizes /api/core/me payload', () => {
+    expect(
+      InvisionProvider.normalizeProfile({
+        id: 42,
+        name: 'Иван Иванов',
+        email: 'User@Community.example',
+      }),
+    ).toEqual({
+      sub: '42',
+      email: 'user@community.example',
+      firstName: null,
+      lastName: null,
+      displayName: 'Иван Иванов',
+    });
+  });
+
+  it('derives authorize/token endpoints from the base URL', () => {
+    const linker = {} as ExternalAccountLinker;
+    const provider = new InvisionProvider(
+      createConfigServiceMock({
+        INVISION_BASE_URL: 'https://community.example.com/',
+      }) as unknown as ConfigService,
+      linker,
+    );
+    // @ts-expect-error проверка protected-геттера
+    expect(provider.endpoints).toEqual({
+      authorizationURL: 'https://community.example.com/oauth/authorize',
+      tokenURL: 'https://community.example.com/oauth/token',
+    });
+  });
+
+  it('is configured only with client keys and a base URL', () => {
+    const linker = {} as ExternalAccountLinker;
+    const noBase = new InvisionProvider(
+      createConfigServiceMock({
+        INVISION_CLIENT_ID: 'id',
+        INVISION_CLIENT_SECRET: 'secret',
+      }) as unknown as ConfigService,
+      linker,
+    );
+    expect(noBase.configured()).toBe(false);
+
+    const enabled = new InvisionProvider(
+      createConfigServiceMock({
+        INVISION_BASE_URL: 'https://community.example.com',
+        INVISION_CLIENT_ID: 'id',
+        INVISION_CLIENT_SECRET: 'secret',
+      }) as unknown as ConfigService,
+      linker,
+    );
+    expect(enabled.configured()).toBe(true);
   });
 });
