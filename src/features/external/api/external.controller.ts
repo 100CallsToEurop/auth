@@ -18,11 +18,18 @@ import { SessionService } from '../../session/application/session.service.js';
 import type { AuthUser } from '../../../common/decorators/current-user.decorator.js';
 import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
 import { Public } from '../../../common/decorators/public.decorator.js';
-import { frontendUrl, sessionMeta, setRefreshCookie } from '../../../common/http/session-http.js';
+import {
+  frontendUrl,
+  sessionMeta,
+  setRefreshCookie,
+} from '../../../common/http/session-http.js';
 import { User } from '../../user/domain/user.entity.js';
 import { ExternalAccountLinker } from '../application/external-account-linker.js';
 import { ExternalProvidersRegistry } from '../infrastructure/external-providers.registry.js';
-import { ExternalAuthGuard, ExternalSyncGuard } from './external-auth.guard.js';
+import {
+  ExternalAuthGuard,
+  ExternalSyncGuard,
+} from '../../../common/guards/external-auth.guard.js';
 
 @Controller('auth')
 export class ExternalController {
@@ -86,7 +93,9 @@ export class ExternalController {
   private async completeExternalFlow(req: Request, res: Response) {
     const user = req.user as User | undefined;
     if (!user?.id) {
-      throw new UnauthorizedException('External provider did not return a user');
+      throw new UnauthorizedException(
+        'External provider did not return a user',
+      );
     }
     const provider = this.externalProviderSlug(req);
     const session = await this.sessionService.start(

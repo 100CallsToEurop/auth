@@ -1,13 +1,16 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
 import { ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserModule } from '../user/user.module.js';
 import { SessionModule } from '../session/session.module.js';
+import { ExternalIdentity } from './domain/external-identity.entity.js';
+import { ExternalIdentitysRepository } from './repository/external-identities.repository.js';
 import { ExternalAccountLinker } from './application/external-account-linker.js';
 import {
   ExternalAuthGuard,
   ExternalSyncGuard,
-} from './api/external-auth.guard.js';
+} from '../../common/guards/external-auth.guard.js';
 import { ExternalController } from './api/external.controller.js';
 import { ExternalProvidersRegistry } from './infrastructure/external-providers.registry.js';
 import { ExternalStrategiesFactory } from './infrastructure/external-strategies.factory.js';
@@ -21,9 +24,15 @@ import { GitHubProvider } from './infrastructure/providers/github.provider.js';
 import { InvisionProvider } from './infrastructure/providers/invision.provider.js';
 
 @Module({
-  imports: [CqrsModule, UserModule, forwardRef(() => SessionModule)],
+  imports: [
+    CqrsModule,
+    TypeOrmModule.forFeature([ExternalIdentity]),
+    forwardRef(() => UserModule),
+    forwardRef(() => SessionModule),
+  ],
   controllers: [ExternalController],
   providers: [
+    ExternalIdentitysRepository,
     ExternalAccountLinker,
     ExternalProvidersRegistry,
     ExternalStrategiesFactory,
@@ -44,6 +53,7 @@ import { InvisionProvider } from './infrastructure/providers/invision.provider.j
     },
   ],
   exports: [
+    ExternalIdentitysRepository,
     ExternalAccountLinker,
     ExternalProvidersRegistry,
     ExternalAuthGuard,

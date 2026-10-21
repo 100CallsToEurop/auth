@@ -8,7 +8,7 @@ import {
   PrimaryGeneratedColumn,
   type Relation,
 } from 'typeorm';
-import { User } from './user.entity.js';
+import { User } from '../../user/domain/user.entity.js';
 
 @Index('uq_external_identities_provider_sub', ['provider', 'providerSub'], {
   unique: true,

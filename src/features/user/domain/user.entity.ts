@@ -8,7 +8,7 @@ import {
   type Relation,
 } from 'typeorm';
 import { RefreshToken } from '../../session/domain/refresh-token.entity.js';
-import { ExternalIdentity } from './external-identity.entity.js';
+import { ExternalIdentity } from '../../external/domain/external-identity.entity.js';
 
 @Entity('users')
 export class User {

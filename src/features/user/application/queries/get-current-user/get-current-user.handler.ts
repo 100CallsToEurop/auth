@@ -1,6 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { IQueryHandler, QueryHandler } from '@nestjs/cqrs';
-import { ExternalIdentitysRepository } from '../../../repository/external-identities.repository.js';
+import { ExternalIdentitysRepository } from '../../../../external/repository/external-identities.repository.js';
 import { UsersRepository } from '../../../repository/users.repository.js';
 import { GetCurrentUserQuery } from './get-current-user.query.js';
 

@@ -5,7 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { User } from '../../user/domain/user.entity.js';
-import { ExternalIdentitysRepository } from '../../user/repository/external-identities.repository.js';
+import { ExternalIdentitysRepository } from '../repository/external-identities.repository.js';
 import { UsersRepository } from '../../user/repository/users.repository.js';
 import type { ExternalProfile } from '../domain/external-profile.js';
 

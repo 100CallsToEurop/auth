@@ -9,9 +9,9 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import passport from 'passport';
-import { ExternalProvidersRegistry } from '../infrastructure/external-providers.registry.js';
-import { TokensService } from '../../session/application/tokens.service.js';
-import { REFRESH_COOKIE } from '../../session/application/session.constants.js';
+import { ExternalProvidersRegistry } from '../../features/external/infrastructure/external-providers.registry.js';
+import { TokensService } from '../../features/session/application/tokens.service.js';
+import { REFRESH_COOKIE } from '../../features/session/application/session.constants.js';
 
 /**
  * Guard входа через внешнего провайдера.
@@ -82,7 +82,9 @@ export class ExternalAuthGuard implements CanActivate {
               err instanceof HttpException
                 ? err
                 : new UnauthorizedException(
-                    err instanceof Error ? err.message : 'Authentication failed',
+                    err instanceof Error
+                      ? err.message
+                      : 'Authentication failed',
                   ),
             );
             return;
@@ -99,7 +101,9 @@ export class ExternalAuthGuard implements CanActivate {
             `External provider "${slug}" callback failed: ${reason || 'no user'}`,
           );
           reject(
-            new UnauthorizedException(reason || 'External authentication failed'),
+            new UnauthorizedException(
+              reason || 'External authentication failed',
+            ),
           );
         },
       )(request, response);
