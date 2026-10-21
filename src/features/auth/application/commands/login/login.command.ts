@@ -1,4 +1,4 @@
-import type { SessionMeta } from '../../session.service.js';
+import type { SessionMeta } from '../../../../session/application/session.service.js';
 
 export class LoginCommand {
   constructor(

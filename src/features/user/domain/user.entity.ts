@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
   type Relation,
 } from 'typeorm';
-import { RefreshToken } from '../../auth/domain/refresh-token.entity.js';
+import { RefreshToken } from '../../session/domain/refresh-token.entity.js';
 import { ExternalIdentity } from './external-identity.entity.js';
 
 @Entity('users')

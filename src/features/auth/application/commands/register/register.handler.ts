@@ -2,7 +2,7 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@nestjs/cqrs';
 import { UsersRepository } from '../../../../user/repository/users.repository.js';
 import { PasswordService } from '../../password.service.js';
-import { SessionService } from '../../session.service.js';
+import { SessionService } from '../../../../session/application/session.service.js';
 import { RegisterCommand } from './register.command.js';
 
 @Injectable()

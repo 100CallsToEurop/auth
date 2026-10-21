@@ -10,8 +10,8 @@ import {
 import type { Request, Response } from 'express';
 import passport from 'passport';
 import { ExternalProvidersRegistry } from '../infrastructure/external-providers.registry.js';
-import { TokensService } from '../../application/tokens.service.js';
-import { REFRESH_COOKIE } from '../../application/auth.constants.js';
+import { TokensService } from '../../../session/application/tokens.service.js';
+import { REFRESH_COOKIE } from '../../../session/application/session.constants.js';
 
 /**
  * Guard входа через внешнего провайдера.
