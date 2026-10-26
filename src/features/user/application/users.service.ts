@@ -5,7 +5,7 @@ import { UsersRepository } from '../infrastructure/repository/users.repository.j
 /**
  * Прикладной сервис пользователей — единственная точка входа в аккаунты для
  * остальных модулей. Репозиторий наружу не отдаём: инварианты (например,
- * «пароль прикрепляется только к аккаунту без пароля») живут здесь.
+ * «регистрация не трогает существующий аккаунт») живут здесь.
  */
 @Injectable()
 export class UsersService {
@@ -28,22 +28,23 @@ export class UsersService {
   }
 
   /**
-   * Регистрация локального входа: новый аккаунт или прикрепление пароля к
-   * аккаунту, созданному через внешнего провайдера (подтверждения почты в
-   * сервисе нет, поэтому занятый email с паролем — конфликт).
+   * Регистрация локального входа — только создание нового аккаунта.
+   *
+   * Прикреплять пароль к уже существующему аккаунту нельзя: почта в сервисе
+   * не подтверждается, поэтому злоумышленник, зная чужой email, мог бы задать
+   * пароль на аккаунт, созданный владельцем через SSO, и войти в него.
+   * Владелец SSO-аккаунта добавляет пароль после входа своим способом
+   * (отдельного сценария установки пароля пока нет).
    */
   async registerWithPassword(
     email: string,
     passwordHash: string,
   ): Promise<User> {
     const existing = await this.findByEmail(email);
-    if (existing?.passwordHash) {
-      throw new ConflictException('Email is already registered');
-    }
-
     if (existing) {
-      existing.passwordHash = passwordHash;
-      return this.save(existing);
+      throw new ConflictException(
+        'An account with this email already exists. Sign in with a method already linked to it.',
+      );
     }
 
     return this.create({ email, passwordHash });

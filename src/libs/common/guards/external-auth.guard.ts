@@ -8,6 +8,10 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import passport from 'passport';
+import {
+  PendingAccountLinkException,
+  type PendingAccountLinkSignal,
+} from '../exceptions/pending-account-link.exception.js';
 import { ExternalProvidersRegistry } from '../../providers/common/registry/external-providers.registry.js';
 import { TokensService } from '../../../features/session/application/tokens.service.js';
 import { RefreshTokensRepository } from '../../../features/session/infrastructure/repository/refresh-tokens.repository.js';
@@ -18,6 +22,11 @@ type ExternalGuardMode = 'login' | 'sync' | 'link';
 type GuardSession = {
   externalSync?: string;
   externalLink?: string;
+};
+
+/** Сигнал «нужно подтвердить владение аккаунтом» для контроллера callback. */
+export type ExternalGuardRequest = Request & {
+  pendingAccountLink?: PendingAccountLinkSignal;
 };
 
 /**
@@ -93,6 +102,16 @@ export abstract class ExternalAuthGuard implements CanActivate {
         {},
         (err: unknown, user: unknown, info: unknown) => {
           if (err) {
+            // Это не сбой входа, а сигнал контроллеру: email провайдера
+            // совпал с существующим аккаунтом. Пользователь ещё не
+            // аутентифицирован, но должен получить экран подтверждения.
+            if (err instanceof PendingAccountLinkException) {
+              (request as ExternalGuardRequest).pendingAccountLink =
+                err.pendingLink;
+              resolve(true);
+              return;
+            }
+
             this.logFailure(slug, err);
             reject(
               err instanceof HttpException

@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import { PendingAccountLinkException } from '../../../libs/common/exceptions/pending-account-link.exception.js';
 import { ExternalAccountLinker } from '../application/external-account-linker.js';
 
 function createUsersRepositoryMock() {
@@ -32,9 +33,11 @@ const PROFILE = {
 describe('ExternalAccountLinker', () => {
   const usersRepository = createUsersRepositoryMock();
   const identitiesRepository = createIdentitiesRepositoryMock();
+  const pendingLinks = { create: vi.fn() };
   const linker = new ExternalAccountLinker(
     usersRepository as never,
     identitiesRepository as never,
+    pendingLinks as never,
   );
 
   beforeEach(() => {
@@ -49,6 +52,10 @@ describe('ExternalAccountLinker', () => {
     identitiesRepository.create.mockImplementation(
       async (data: Record<string, unknown>) => ({ id: 'link-1', ...data }),
     );
+    pendingLinks.create.mockResolvedValue({
+      token: 'pending-token',
+      expiresAt: new Date('2030-01-01T00:00:00.000Z'),
+    });
   });
 
   describe('link (вход через провайдера)', () => {
@@ -109,17 +116,30 @@ describe('ExternalAccountLinker', () => {
         passwordHash: 'local-hash',
       });
 
-      await expect(
-        linker.link('yandex', {
-          sub: 'sub-4',
-          email: 'victim@example.com',
-          firstName: null,
-          lastName: null,
-          displayName: null,
-          emailVerified: true,
-        }),
-      ).rejects.toBeInstanceOf(ConflictException);
+      const attempt = linker.link('yandex', {
+        sub: 'sub-4',
+        email: 'victim@example.com',
+        firstName: null,
+        lastName: null,
+        displayName: null,
+        emailVerified: true,
+      });
 
+      await expect(attempt).rejects.toBeInstanceOf(PendingAccountLinkException);
+      await expect(attempt).rejects.toMatchObject({
+        pendingLink: {
+          linkToken: 'pending-token',
+          provider: 'yandex',
+          email: 'victim@example.com',
+        },
+      });
+
+      expect(pendingLinks.create).toHaveBeenCalledWith({
+        provider: 'yandex',
+        providerSub: 'sub-4',
+        userId: 'user-victim',
+        email: 'victim@example.com',
+      });
       expect(usersRepository.create).not.toHaveBeenCalled();
       expect(identitiesRepository.create).not.toHaveBeenCalled();
     });
@@ -232,6 +252,65 @@ describe('ExternalAccountLinker', () => {
 
       await expect(
         linker.linkProvider('github', PROFILE, 'user-10'),
+      ).rejects.toThrow(/unauthorized|Unauthorized/i);
+    });
+  });
+
+  describe('linkPendingIdentity (после подтверждения пароля)', () => {
+    it('links the SSO identity to the proven account', async () => {
+      const stored = { id: 'user-20', email: 'me@example.com' };
+      usersRepository.findById.mockResolvedValue(stored);
+
+      const user = await linker.linkPendingIdentity(
+        'user-20',
+        'authentik',
+        'sub-20',
+      );
+
+      expect(user.id).toBe('user-20');
+      expect(identitiesRepository.create).toHaveBeenCalledWith({
+        userId: 'user-20',
+        provider: 'authentik',
+        providerSub: 'sub-20',
+      });
+    });
+
+    it('is idempotent when the identity already belongs to the user', async () => {
+      usersRepository.findById.mockResolvedValue({ id: 'user-20' });
+      identitiesRepository.findByProvider.mockResolvedValue({
+        id: 'link-20',
+        userId: 'user-20',
+        provider: 'authentik',
+        providerSub: 'sub-20',
+      });
+
+      await expect(
+        linker.linkPendingIdentity('user-20', 'authentik', 'sub-20'),
+      ).resolves.toMatchObject({ id: 'user-20' });
+      expect(identitiesRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses an identity that belongs to another user', async () => {
+      usersRepository.findById.mockResolvedValue({ id: 'user-20' });
+      identitiesRepository.findByProvider.mockResolvedValue({
+        id: 'link-21',
+        userId: 'user-other',
+      });
+
+      await expect(
+        linker.linkPendingIdentity('user-20', 'authentik', 'sub-20'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(identitiesRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('requires a subject and an existing user', async () => {
+      await expect(
+        linker.linkPendingIdentity('user-20', 'authentik', ' '),
+      ).rejects.toThrow(/subject/);
+
+      usersRepository.findById.mockResolvedValue(null);
+      await expect(
+        linker.linkPendingIdentity('user-20', 'authentik', 'sub-20'),
       ).rejects.toThrow(/unauthorized|Unauthorized/i);
     });
   });

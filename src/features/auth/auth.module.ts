@@ -25,5 +25,8 @@ const COMMAND_HANDLERS = [
   imports: [CqrsModule, UserModule, SessionModule],
   controllers: [AuthController],
   providers: [...COMMAND_HANDLERS, PasswordService],
+  // Подтверждение привязки SSO к существующему аккаунту тоже проверяет
+  // пароль — переиспользуем ту же реализацию bcrypt и dummy-хэш.
+  exports: [PasswordService],
 })
 export class AuthModule {}

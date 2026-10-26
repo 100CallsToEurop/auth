@@ -14,3 +14,14 @@ export const emailTracker: ThrottlerGetTrackerFunction = (req) => {
     typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
   return email || `ip:${String(req.ip ?? 'unknown')}`;
 };
+
+/**
+ * Трекер для подтверждения привязки SSO: считает попытки на конкретный
+ * одноразовый токен. Иначе подбор пароля к украденному токену можно было бы
+ * распределить по разным IP. Без токена ограничиваем по IP.
+ */
+export const pendingLinkTracker: ThrottlerGetTrackerFunction = (req) => {
+  const body = req.body as { token?: unknown } | undefined;
+  const token = typeof body?.token === 'string' ? body.token.trim() : '';
+  return token ? `pending-link:${token}` : `ip:${String(req.ip ?? 'unknown')}`;
+};

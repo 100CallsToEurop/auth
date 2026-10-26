@@ -34,20 +34,21 @@ describe('UsersService', () => {
       expect(user.id).toBe('user-1');
     });
 
-    it('attaches a password to an account created via a provider', async () => {
+    it('refuses to attach a password to an account created via a provider', async () => {
+      // Иначе знание чужого email позволяло бы завладеть SSO-аккаунтом.
       const existing = {
         id: 'user-9',
         email: 'a@b.c',
         passwordHash: null,
       };
       repository.findByEmail.mockResolvedValue(existing);
-      repository.save.mockImplementation(async (user) => user);
 
-      const user = await service.registerWithPassword('a@b.c', 'password-hash');
-
+      await expect(
+        service.registerWithPassword('a@b.c', 'password-hash'),
+      ).rejects.toThrow(ConflictException);
       expect(repository.create).not.toHaveBeenCalled();
-      expect(repository.save).toHaveBeenCalledWith(existing);
-      expect(user.passwordHash).toBe('password-hash');
+      expect(repository.save).not.toHaveBeenCalled();
+      expect(existing.passwordHash).toBeNull();
     });
 
     it('rejects an account that already has a password', async () => {

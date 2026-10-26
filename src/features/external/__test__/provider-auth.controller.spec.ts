@@ -14,10 +14,17 @@ function createResponse(): {
   res: Response;
   cookie: ReturnType<typeof vi.fn>;
   redirect: ReturnType<typeof vi.fn>;
+  status: ReturnType<typeof vi.fn>;
 } {
   const cookie = vi.fn();
   const redirect = vi.fn();
-  return { res: { cookie, redirect } as unknown as Response, cookie, redirect };
+  const status = vi.fn();
+  return {
+    res: { cookie, redirect, status } as unknown as Response,
+    cookie,
+    redirect,
+    status,
+  };
 }
 
 describe('ProviderAuthController', () => {
@@ -33,12 +40,14 @@ describe('ProviderAuthController', () => {
   const queryBus = { execute: vi.fn() };
   const providersRegistry = { list: vi.fn() };
   const linker = { unlink: vi.fn() };
+  const accountLinkService = { describe: vi.fn(), confirm: vi.fn() };
   const controller = new ProviderAuthController(
     sessionService as unknown as SessionService,
     configService as never,
     queryBus as never,
     providersRegistry as never,
     linker as never,
+    accountLinkService as never,
   );
 
   beforeEach(() => {
@@ -150,6 +159,115 @@ describe('ProviderAuthController', () => {
     });
 
     expect(redirect).not.toHaveBeenCalled();
+  });
+
+  describe('existing account collision', () => {
+    const pending = {
+      linkToken: 'link-token',
+      provider: 'authentik',
+      email: 'user@example.com',
+      expiresAt: '2030-01-01T00:00:00.000Z',
+    };
+
+    function requestWithPending(): Request {
+      const req = createRequest() as Request & {
+        pendingAccountLink?: typeof pending;
+      };
+      req.pendingAccountLink = pending;
+      return req;
+    }
+
+    it('redirects a browser to the confirmation screen without a session', async () => {
+      const req = requestWithPending();
+      req.headers.accept =
+        'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+      const { res, cookie, redirect } = createResponse();
+      configService.get.mockImplementation((key: string) =>
+        key === 'FRONTEND_URL' ? 'https://front.example.com' : undefined,
+      );
+
+      await expect(
+        controller.authentikAuthCallback(req, res),
+      ).resolves.toBeUndefined();
+
+      expect(redirect).toHaveBeenCalledWith(
+        'https://front.example.com/link-account#link_token=link-token',
+      );
+      expect(cookie).not.toHaveBeenCalled();
+      expect(sessionService.start).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 with the one-time token to API clients', async () => {
+      const req = requestWithPending();
+      req.headers.accept = '*/*';
+      const { res, cookie, redirect, status } = createResponse();
+
+      await expect(controller.authentikAuthCallback(req, res)).resolves.toEqual(
+        {
+          requiresAccountLink: true,
+          ...pending,
+        },
+      );
+
+      expect(status).toHaveBeenCalledWith(409);
+      expect(redirect).not.toHaveBeenCalled();
+      expect(cookie).not.toHaveBeenCalled();
+      expect(sessionService.start).not.toHaveBeenCalled();
+    });
+  });
+
+  it('describes a pending account link for the confirmation screen', async () => {
+    accountLinkService.describe.mockResolvedValueOnce({
+      provider: 'github',
+      email: 'user@example.com',
+      hasPassword: true,
+      expiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    providersRegistry.list.mockReturnValueOnce([
+      { slug: 'github', displayName: 'GitHub' },
+    ]);
+
+    await expect(
+      controller.accountLinkInfo({ token: 'link-token' }),
+    ).resolves.toEqual({
+      provider: 'github',
+      providerName: 'GitHub',
+      email: 'user@example.com',
+      hasPassword: true,
+      expiresAt: '2030-01-01T00:00:00.000Z',
+    });
+    expect(accountLinkService.describe).toHaveBeenCalledWith('link-token');
+  });
+
+  it('confirms the link and issues a session', async () => {
+    const issued = {
+      user: { id: 'user-1' },
+      accessToken: 'access-token',
+      refreshToken: 'refresh-token',
+      jti: 'jti-1',
+    };
+    accountLinkService.confirm.mockResolvedValueOnce(issued);
+    const req = createRequest();
+    const { res, cookie } = createResponse();
+
+    await expect(
+      controller.accountLinkConfirm(
+        { token: 'link-token', password: 'password' },
+        req,
+        res,
+      ),
+    ).resolves.toEqual({ user: issued.user, accessToken: 'access-token' });
+
+    expect(accountLinkService.confirm).toHaveBeenCalledWith(
+      'link-token',
+      'password',
+      { userAgent: 'vitest', ip: '127.0.0.1', provider: 'password' },
+    );
+    expect(cookie).toHaveBeenCalledWith(
+      'refresh_token',
+      'refresh-token',
+      expect.objectContaining({ httpOnly: true }),
+    );
   });
 
   it('lists available providers', () => {

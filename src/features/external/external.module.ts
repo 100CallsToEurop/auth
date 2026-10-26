@@ -1,10 +1,16 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CqrsModule } from '@nestjs/cqrs';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from '../auth/auth.module.js';
 import { SessionModule } from '../session/session.module.js';
 import { UserModule } from '../user/user.module.js';
+import { AccountLinkService } from './application/account-link.service.js';
 import { ExternalAccountLinker } from './application/external-account-linker.js';
+import { PendingAccountLinksService } from './application/pending-account-links.service.js';
 import { ProviderAuthController } from './api/provider-auth.controller.js';
+import { PendingAccountLink } from './domain/pending-account-link.entity.js';
+import { PendingAccountLinksRepository } from './infrastructure/repository/pending-account-links.repository.js';
 import { FrontendOriginGuard } from '../../libs/common/guards/frontend-origin.guard.js';
 import { ExternalProvidersModule } from '../../libs/providers/common/registry/external-providers.module.js';
 import { ExternalStrategiesFactory } from '../../libs/providers/common/registry/external-strategies.factory.js';
@@ -44,10 +50,20 @@ import { YandexProvider } from '../../libs/providers/implementations/yandex/yand
  * ExternalProvidersModule, чтобы session мог использовать его без цикла.
  */
 @Module({
-  imports: [CqrsModule, UserModule, SessionModule, ExternalProvidersModule],
+  imports: [
+    CqrsModule,
+    UserModule,
+    SessionModule,
+    AuthModule,
+    ExternalProvidersModule,
+    TypeOrmModule.forFeature([PendingAccountLink]),
+  ],
   controllers: [ProviderAuthController],
   providers: [
     ExternalAccountLinker,
+    PendingAccountLinksService,
+    PendingAccountLinksRepository,
+    AccountLinkService,
     GithubAuthGuard,
     GithubLinkGuard,
     GithubSyncGuard,

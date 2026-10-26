@@ -28,6 +28,20 @@ export function frontendLoginUrl(
 }
 
 /**
+ * URL промежуточного экрана подтверждения владения аккаунтом. Одноразовый
+ * токен передаётся во фрагменте — он не попадает в логи сервера и referer.
+ */
+export function frontendAccountLinkUrl(
+  configService: ConfigService,
+  linkToken: string,
+): string {
+  const url = new URL(frontendUrl(configService));
+  url.pathname = '/link-account';
+  url.hash = new URLSearchParams({ link_token: linkToken }).toString();
+  return url.toString();
+}
+
+/**
  * IP клиента. express учитывает X-Forwarded-For с учётом trust proxy,
  * поэтому берём req.ip, а заголовок читаем только как запасной вариант
  * (если приложение почему-то стоит без прокси).

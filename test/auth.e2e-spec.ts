@@ -5,6 +5,13 @@ import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { randomUUID } from 'node:crypto';
 import { AppModule } from '../src/app.module.js';
+import { ExternalAccountLinker } from '../src/features/external/application/external-account-linker.js';
+import { PendingAccountLinksService } from '../src/features/external/application/pending-account-links.service.js';
+import { UsersService } from '../src/features/user/application/users.service.js';
+import {
+  PendingAccountLinkException,
+  type PendingAccountLinkSignal,
+} from '../src/libs/common/exceptions/pending-account-link.exception.js';
 import { isDatabaseAvailable } from './db-available.js';
 
 const dbAvailable = await isDatabaseAvailable();
@@ -124,5 +131,162 @@ describe.skipIf(!dbAvailable)('Auth (e2e)', () => {
       .post('/auth/refresh')
       .set('Cookie', cookie)
       .expect(401);
+  });
+
+  describe('привязка SSO к существующему аккаунту', () => {
+    const linkEmail = `e2e-link-${randomUUID().slice(0, 8)}@example.com`;
+    const linkPassword = 'password123';
+    const provider = 'authentik';
+    const providerSub = `sub-${randomUUID()}`;
+    let userId: string;
+    let pendingLink: PendingAccountLinkSignal;
+
+    const linker = () => app.get(ExternalAccountLinker);
+    const pendingLinks = () => app.get(PendingAccountLinksService);
+    const usersService = () => app.get(UsersService);
+
+    const ssoProfile = (sub: string, profileEmail: string) => ({
+      sub,
+      email: profileEmail,
+      firstName: 'Иван',
+      lastName: 'Иванов',
+      displayName: 'Иванов Иван',
+      emailVerified: true,
+    });
+
+    beforeAll(async () => {
+      const res = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({ email: linkEmail, password: linkPassword })
+        .expect(201);
+      userId = res.body.user.id;
+    });
+
+    it('на совпадении email выдаёт заявку, а не сессию', async () => {
+      const error = await linker()
+        .link(provider, ssoProfile(providerSub, linkEmail.toUpperCase()))
+        .then(
+          () => {
+            throw new Error('вход не должен был выполниться');
+          },
+          (err: unknown) => err,
+        );
+
+      expect(error).toBeInstanceOf(PendingAccountLinkException);
+      pendingLink = (error as PendingAccountLinkException).pendingLink;
+      expect(pendingLink).toMatchObject({
+        provider,
+        email: linkEmail,
+      });
+      expect(pendingLink.linkToken).toBeTruthy();
+    });
+
+    it('отдаёт данные промежуточного экрана', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/auth/account-link/info')
+        .send({ token: pendingLink.linkToken })
+        .expect(200);
+
+      expect(res.body).toMatchObject({
+        provider,
+        providerName: 'Authentik',
+        email: linkEmail,
+        hasPassword: true,
+      });
+      expect(res.headers['cache-control']).toContain('no-store');
+    });
+
+    it('не расходует токен при неверном пароле', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/account-link/confirm')
+        .send({ token: pendingLink.linkToken, password: 'wrong-password' })
+        .expect(401);
+
+      await request(app.getHttpServer())
+        .post('/auth/account-link/info')
+        .send({ token: pendingLink.linkToken })
+        .expect(200);
+    });
+
+    it('подтверждает владение, привязывает провайдера и выдаёт сессию', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/auth/account-link/confirm')
+        .send({ token: pendingLink.linkToken, password: linkPassword })
+        .expect(200);
+
+      expect(res.body.user).toMatchObject({ id: userId, email: linkEmail });
+      expect(res.body.accessToken).toBeTruthy();
+      expect(res.body.refreshToken).toBeUndefined();
+      const cookie = extractRefreshCookie(res.headers['set-cookie']);
+      expect(cookie).toContain('refresh_token=');
+
+      const me = await request(app.getHttpServer())
+        .get('/auth/me')
+        .set('Authorization', `Bearer ${res.body.accessToken}`)
+        .expect(200);
+      expect(me.body.providers).toEqual(
+        expect.arrayContaining(['password', provider]),
+      );
+    });
+
+    it('не принимает тот же токен повторно', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/account-link/confirm')
+        .send({ token: pendingLink.linkToken, password: linkPassword })
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .post('/auth/account-link/info')
+        .send({ token: pendingLink.linkToken })
+        .expect(404);
+    });
+
+    it('пускает через привязанный SSO и оставляет вход по паролю', async () => {
+      const viaSso = await linker().link(
+        provider,
+        ssoProfile(providerSub, linkEmail),
+      );
+      expect(viaSso.id).toBe(userId);
+
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: linkEmail, password: linkPassword })
+        .expect(200);
+    });
+
+    it('не даёт привязать другой SSO к аккаунту без пароля', async () => {
+      const ssoEmail = `e2e-sso-${randomUUID().slice(0, 8)}@example.com`;
+      const ssoUser = await usersService().create({
+        email: ssoEmail,
+        passwordHash: null,
+      });
+
+      // Второй провайдер с тем же email: аккаунт создан через SSO, поэтому
+      // подтвердить владение паролем нельзя — заявка есть, входа нет.
+      const pending = await pendingLinks().create({
+        provider: 'github',
+        providerSub: `sub-${randomUUID()}`,
+        userId: ssoUser.id,
+        email: ssoEmail,
+      });
+
+      const info = await request(app.getHttpServer())
+        .post('/auth/account-link/info')
+        .send({ token: pending.token })
+        .expect(200);
+      expect(info.body.hasPassword).toBe(false);
+
+      await request(app.getHttpServer())
+        .post('/auth/account-link/confirm')
+        .send({ token: pending.token, password: 'anything' })
+        .expect(400);
+    });
+
+    it('отклоняет неизвестный токен', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/account-link/info')
+        .send({ token: 'unknown-token-value-1234567890' })
+        .expect(404);
+    });
   });
 });

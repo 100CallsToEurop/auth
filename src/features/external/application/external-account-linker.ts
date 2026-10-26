@@ -9,8 +9,10 @@ import { User } from '../../user/domain/user.entity.js';
 import { LinkedAccountsService } from '../../user/application/linked-accounts.service.js';
 import { UsersService } from '../../user/application/users.service.js';
 import { EMAIL_PATTERN } from '../../../libs/consts/validation.constants.js';
+import { PendingAccountLinkException } from '../../../libs/common/exceptions/pending-account-link.exception.js';
 import type { ExternalAccountResolver } from '../../../libs/providers/common/contracts/external-account-resolver.js';
 import type { ExternalProfile } from '../../../libs/providers/common/contracts/external-profile.js';
+import { PendingAccountLinksService } from './pending-account-links.service.js';
 
 /**
  * Связывание внешнего аккаунта с локальным пользователем — общий алгоритм
@@ -24,9 +26,14 @@ import type { ExternalProfile } from '../../../libs/providers/common/contracts/e
  * через провайдера с чужим email привязывался к уже созданному локальному
  * аккаунту, а значит злоумышленник мог завести аккаунт на чужой адрес
  * (регистрация почту не подтверждает) и войти в него через провайдера,
- * получив доступ к чужому аккаунту. Привязать провайдер к существующему
- * аккаунту можно только явно — из профиля, когда пользователь уже вошёл
- * (см. linkProvider).
+ * получив доступ к чужому аккаунту.
+ *
+ * Теперь при совпадении email создаётся короткоживущая заявка на привязку, а
+ * вход не выполняется: пользователь должен доказать владение существующим
+ * аккаунтом (паролем) на промежуточном экране. Только после этого
+ * SSO-идентичность привязывается к аккаунту (см. AccountLinkService). Явная
+ * привязка из профиля (linkProvider) тоже доступна — владение там
+ * подтверждено активной сессией.
  *
  * ВАЖНО: сам по себе вход НЕ обновляет профиль (email/ФИО) — данные берутся
  * у провайдера только при явной синхронизации (syncProvider).
@@ -38,6 +45,7 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
   constructor(
     private readonly usersService: UsersService,
     private readonly linkedAccounts: LinkedAccountsService,
+    private readonly pendingLinks: PendingAccountLinksService,
   ) {}
 
   async link(provider: string, profile: ExternalProfile): Promise<User> {
@@ -55,10 +63,24 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
 
     const existing = await this.usersService.findByEmail(email);
     if (existing) {
-      throw new ConflictException(
-        `An account with email ${email} already exists. ` +
-          `Sign in with it and link ${provider} in your profile settings.`,
+      // Не входим и не сливаем аккаунты: выдаём одноразовую заявку, которую
+      // можно подтвердить только паролем существующего аккаунта.
+      const pending = await this.pendingLinks.create({
+        provider,
+        providerSub: sub,
+        userId: existing.id,
+        email: existing.email,
+      });
+      this.logger.log(
+        `SSO ${provider} совпал по email с user=${existing.id} — ` +
+          'требуется подтверждение владения аккаунтом',
       );
+      throw new PendingAccountLinkException({
+        linkToken: pending.token,
+        provider,
+        email: existing.email,
+        expiresAt: pending.expiresAt.toISOString(),
+      });
     }
 
     let user: User;
@@ -105,9 +127,50 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
       throw new UnauthorizedException();
     }
 
-    const existing = await this.linkedAccounts.findByProvider(provider, sub);
+    return this.attachIdentity(user, provider, sub);
+  }
+
+  /**
+   * Привязка после подтверждения владения существующим аккаунтом
+   * (промежуточный экран SSO-входа). Пароль уже проверен вызывающим кодом,
+   * поэтому здесь только атомарно закрепляем пару (provider, sub).
+   */
+  async linkPendingIdentity(
+    userId: string,
+    provider: string,
+    providerSub: string,
+  ): Promise<User> {
+    const sub = providerSub?.trim();
+    if (!sub) {
+      throw new UnauthorizedException(
+        `Provider ${provider} did not return a subject`,
+      );
+    }
+
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    return this.attachIdentity(user, provider, sub);
+  }
+
+  /**
+   * Закрепляет (provider, sub) за пользователем. Если идентичность уже
+   * принадлежит ему — идемпотентно возвращает аккаунт; если другому —
+   * конфликт (параллельный вход/подмена).
+   */
+  private async attachIdentity(
+    user: User,
+    provider: string,
+    providerSub: string,
+  ): Promise<User> {
+    const existing = await this.linkedAccounts.findByProvider(
+      provider,
+      providerSub,
+    );
     if (existing) {
-      if (existing.userId === userId) {
+      if (existing.userId === user.id) {
         return user;
       }
       throw new ConflictException(
@@ -115,7 +178,7 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
       );
     }
 
-    await this.ensureIdentity(userId, provider, sub);
+    await this.ensureIdentity(user.id, provider, providerSub);
     return user;
   }
 
