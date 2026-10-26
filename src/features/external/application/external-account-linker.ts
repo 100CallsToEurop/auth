@@ -124,7 +124,7 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
 
     const user = await this.usersService.findById(userId);
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     return this.attachIdentity(user, provider, sub);
@@ -143,13 +143,13 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
     const sub = providerSub?.trim();
     if (!sub) {
       throw new UnauthorizedException(
-        `Provider ${provider} did not return a subject`,
+        `Провайдер ${provider} не вернул идентификатор пользователя`,
       );
     }
 
     const user = await this.usersService.findById(userId);
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     return this.attachIdentity(user, provider, sub);
@@ -174,7 +174,7 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
         return user;
       }
       throw new ConflictException(
-        `This ${provider} account is already linked to another user`,
+        `Аккаунт ${provider} уже привязан к другому пользователю`,
       );
     }
 
@@ -219,13 +219,13 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
     const record = await this.linkedAccounts.findByProvider(provider, sub);
     if (!record || record.userId !== userId) {
       throw new BadRequestException(
-        `Provider ${provider} is not linked to the current account`,
+        `Провайдер ${provider} не привязан к текущему аккаунту`,
       );
     }
 
     const user = await this.usersService.findById(userId);
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     return this.applyProfile(user, {
@@ -249,19 +249,19 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
     );
     if (!record) {
       throw new BadRequestException(
-        `Provider ${provider} is not linked to the current account`,
+        `Провайдер ${provider} не привязан к текущему аккаунту`,
       );
     }
 
     const user = await this.usersService.findById(userId);
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     const identities = await this.linkedAccounts.findByUserId(userId);
     const remaining = identities.filter((i) => i.id !== record.id).length;
     if (!user.passwordHash && remaining === 0) {
-      throw new BadRequestException('Cannot unlink the last sign-in method');
+      throw new BadRequestException('Нельзя отвязать последний способ входа');
     }
 
     await this.linkedAccounts.remove(record.id);
@@ -271,7 +271,7 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
     const sub = profile.sub?.trim();
     if (!sub) {
       throw new UnauthorizedException(
-        `Provider ${provider} did not return a subject`,
+        `Провайдер ${provider} не вернул идентификатор пользователя`,
       );
     }
     return sub;
@@ -280,13 +280,11 @@ export class ExternalAccountLinker implements ExternalAccountResolver {
   private requireEmail(provider: string, profile: ExternalProfile): string {
     const email = profile.email?.toLowerCase().trim();
     if (!email) {
-      throw new UnauthorizedException(
-        `Provider ${provider} did not return an email`,
-      );
+      throw new UnauthorizedException(`Провайдер ${provider} не вернул email`);
     }
     if (!EMAIL_PATTERN.test(email)) {
       throw new UnauthorizedException(
-        `Provider ${provider} returned a malformed email`,
+        `Провайдер ${provider} вернул некорректный email`,
       );
     }
     return email;

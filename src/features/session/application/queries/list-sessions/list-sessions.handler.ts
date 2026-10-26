@@ -24,7 +24,7 @@ export class ListSessionsHandler implements IQueryHandler<ListSessionsQuery> {
 
   async execute(query: ListSessionsQuery): Promise<SessionInfo[]> {
     if (!query.userId) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     const sessions = await this.refreshTokensRepository.findByUserId(

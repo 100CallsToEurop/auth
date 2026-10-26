@@ -1,9 +1,13 @@
 import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
+import { AttachPasswordCommand } from '../application/commands/attach-password/attach-password.command.js';
+import { AttachPasswordHandler } from '../application/commands/attach-password/attach-password.handler.js';
 import { LoginCommand } from '../application/commands/login/login.command.js';
 import { LoginHandler } from '../application/commands/login/login.handler.js';
 import { RegisterCommand } from '../application/commands/register/register.command.js';
 import { RegisterHandler } from '../application/commands/register/register.handler.js';
+import { SetPasswordCommand } from '../application/commands/set-password/set-password.command.js';
+import { SetPasswordHandler } from '../application/commands/set-password/set-password.handler.js';
 import { PasswordService } from '../application/password.service.js';
 import { GetCurrentUserHandler } from '../../user/application/queries/get-current-user/get-current-user.handler.js';
 import { GetCurrentUserQuery } from '../../user/application/queries/get-current-user/get-current-user.query.js';
@@ -19,6 +23,8 @@ function createUsersServiceMock() {
     findById: vi.fn(),
     findByEmail: vi.fn(),
     registerWithPassword: vi.fn(),
+    setPassword: vi.fn(),
+    attachPasswordToProviderAccount: vi.fn(),
   };
 }
 
@@ -81,7 +87,7 @@ describe('RegisterHandler', () => {
     expect(sessionService.start).not.toHaveBeenCalled();
   });
 
-  it('signs in an account whose password was attached', async () => {
+  it('starts a session for the created user', async () => {
     usersService.registerWithPassword.mockResolvedValue({
       id: 'user-9',
       email: 'a@b.c',
@@ -100,6 +106,87 @@ describe('RegisterHandler', () => {
       {},
     );
     expect(result).toEqual(SESSION);
+  });
+});
+
+describe('SetPasswordHandler', () => {
+  const usersService = createUsersServiceMock();
+  const handler = new SetPasswordHandler(
+    usersService as never,
+    new PasswordService(),
+  );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('hashes the password and stores it for the current user', async () => {
+    usersService.setPassword.mockResolvedValue({
+      id: 'user-1',
+      email: 'a@b.c',
+    });
+
+    await handler.execute(new SetPasswordCommand('user-1', 'password123'));
+
+    expect(usersService.setPassword).toHaveBeenCalledWith(
+      'user-1',
+      expect.any(String),
+    );
+    const passwordHash = usersService.setPassword.mock.calls[0][1];
+    expect(passwordHash).not.toBe('password123');
+    expect(await bcrypt.compare('password123', passwordHash)).toBe(true);
+  });
+});
+
+describe('AttachPasswordHandler', () => {
+  const usersService = createUsersServiceMock();
+  const sessionService = createSessionServiceMock();
+  const handler = new AttachPasswordHandler(
+    usersService as never,
+    new PasswordService(),
+    sessionService as never,
+  );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    sessionService.start.mockResolvedValue(SESSION);
+  });
+
+  it('attaches a password and starts a password session', async () => {
+    usersService.attachPasswordToProviderAccount.mockResolvedValue({
+      id: 'user-9',
+      email: 'a@b.c',
+    });
+
+    const result = await handler.execute(
+      new AttachPasswordCommand('A@B.C', 'password123', {
+        ip: '1.2.3.4',
+      }),
+    );
+
+    expect(usersService.attachPasswordToProviderAccount).toHaveBeenCalledWith(
+      'a@b.c',
+      expect.any(String),
+    );
+    const passwordHash =
+      usersService.attachPasswordToProviderAccount.mock.calls[0][1];
+    expect(await bcrypt.compare('password123', passwordHash)).toBe(true);
+    expect(sessionService.start).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user-9', email: 'a@b.c' }),
+      { ip: '1.2.3.4', provider: 'password' },
+    );
+    expect(result).toEqual(SESSION);
+  });
+
+  it('does not start a session when the account cannot attach a password', async () => {
+    usersService.attachPasswordToProviderAccount.mockRejectedValue(
+      new ConflictException('У аккаунта с этой почтой уже есть пароль.'),
+    );
+
+    await expect(
+      handler.execute(new AttachPasswordCommand('a@b.c', 'password123')),
+    ).rejects.toThrow(ConflictException);
+    expect(sessionService.start).not.toHaveBeenCalled();
   });
 });
 

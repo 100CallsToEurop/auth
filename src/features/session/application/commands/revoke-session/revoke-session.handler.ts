@@ -16,7 +16,7 @@ export class RevokeSessionHandler implements ICommandHandler<RevokeSessionComman
       command.userId,
     );
     if (!revoked) {
-      throw new NotFoundException('Session not found');
+      throw new NotFoundException('Сессия не найдена');
     }
     return { ok: true };
   }

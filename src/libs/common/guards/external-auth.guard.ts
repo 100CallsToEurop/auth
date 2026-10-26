@@ -76,7 +76,7 @@ export abstract class ExternalAuthGuard implements CanActivate {
       // этому флагу (одноразовому) действие применится к нужному аккаунту.
       const session = request.session as GuardSession | undefined;
       if (!session) {
-        throw new UnauthorizedException();
+        throw new UnauthorizedException('Требуется вход в аккаунт');
       }
       if (this.mode === 'sync') {
         session.externalSync = user.id;
@@ -119,7 +119,7 @@ export abstract class ExternalAuthGuard implements CanActivate {
                 : new UnauthorizedException(
                     err instanceof Error
                       ? err.message
-                      : 'Authentication failed',
+                      : 'Не удалось выполнить вход через внешнего провайдера',
                   ),
             );
             return;
@@ -137,7 +137,11 @@ export abstract class ExternalAuthGuard implements CanActivate {
           this.logger.warn(
             `External provider "${slug}" callback failed: ${reason || 'no user'}`,
           );
-          reject(new UnauthorizedException('External authentication failed'));
+          reject(
+            new UnauthorizedException(
+              'Не удалось выполнить вход через внешнего провайдера',
+            ),
+          );
         },
       )(request, response);
     });
@@ -163,7 +167,9 @@ export abstract class ExternalAuthGuard implements CanActivate {
           reject(
             error instanceof HttpException
               ? error
-              : new UnauthorizedException('External authentication failed'),
+              : new UnauthorizedException(
+                  'Не удалось выполнить вход через внешнего провайдера',
+                ),
           );
           return;
         }
@@ -180,7 +186,11 @@ export abstract class ExternalAuthGuard implements CanActivate {
           return;
         }
         // Стратегия не смогла начать редирект.
-        settle(new UnauthorizedException('External authentication failed'));
+        settle(
+          new UnauthorizedException(
+            'Не удалось выполнить вход через внешнего провайдера',
+          ),
+        );
       });
     });
   }
@@ -200,12 +210,12 @@ export abstract class ExternalAuthGuard implements CanActivate {
 
     const raw = request.cookies?.[REFRESH_COOKIE] as string | undefined;
     if (!raw) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     const payload = await this.tokensService.verifyRefresh(raw);
     if (!payload) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     const active = await this.refreshTokensRepository.isActive(
@@ -213,7 +223,7 @@ export abstract class ExternalAuthGuard implements CanActivate {
       payload.sub,
     );
     if (!active) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     (request as { user?: unknown }).user = { id: payload.sub, email: '' };

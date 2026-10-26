@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { AppModule } from '../src/app.module.js';
 import { ExternalAccountLinker } from '../src/features/external/application/external-account-linker.js';
 import { PendingAccountLinksService } from '../src/features/external/application/pending-account-links.service.js';
+import { SessionService } from '../src/features/session/application/session.service.js';
 import { UsersService } from '../src/features/user/application/users.service.js';
 import {
   PendingAccountLinkException,
@@ -287,6 +288,116 @@ describe.skipIf(!dbAvailable)('Auth (e2e)', () => {
         .post('/auth/account-link/info')
         .send({ token: 'unknown-token-value-1234567890' })
         .expect(404);
+    });
+  });
+
+  describe('пароль для аккаунта, созданного через SSO', () => {
+    const linker = () => app.get(ExternalAccountLinker);
+    const sessions = () => app.get(SessionService);
+
+    const ssoProfile = (sub: string, profileEmail: string) => ({
+      sub,
+      email: profileEmail,
+      firstName: 'Иван',
+      lastName: 'Иванов',
+      displayName: 'Иванов Иван',
+      emailVerified: true,
+    });
+
+    const createSsoAccount = () => {
+      const ssoEmail = `e2e-password-${randomUUID().slice(0, 8)}@example.com`;
+      return linker()
+        .link('github', ssoProfile(`sub-${randomUUID()}`, ssoEmail))
+        .then((user) => ({ user, email: ssoEmail }));
+    };
+
+    it('создаёт пароль в профиле и открывает вход по нему', async () => {
+      const { user, email: ssoEmail } = await createSsoAccount();
+      const session = await sessions().start(user);
+
+      const updated = await request(app.getHttpServer())
+        .put('/auth/password')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .send({ password: 'profile-password-123' })
+        .expect(200);
+
+      expect(updated.body.providers).toContain('password');
+
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: ssoEmail, password: 'profile-password-123' })
+        .expect(200);
+
+      // Смена существующего пароля — отдельный сценарий, здесь запрещена.
+      await request(app.getHttpServer())
+        .put('/auth/password')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .send({ password: 'another-password-123' })
+        .expect(400);
+    });
+
+    it('не даёт создать пароль без входа в аккаунт', async () => {
+      const res = await request(app.getHttpServer())
+        .put('/auth/password')
+        .send({ password: 'profile-password-123' })
+        .expect(401);
+
+      expect(res.body.message).toBe('Требуется вход в аккаунт');
+    });
+
+    it('предлагает привязать пароль при конфликте регистрации', async () => {
+      const { user, email: ssoEmail } = await createSsoAccount();
+
+      const conflict = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({ email: ssoEmail, password: 'attached-password-123' })
+        .expect(409);
+
+      expect(conflict.body.canAttachPassword).toBe(true);
+      expect(conflict.body.message).toContain('можно привязать');
+
+      const attached = await request(app.getHttpServer())
+        .post('/auth/register/attach-password')
+        .send({ email: ssoEmail, password: 'attached-password-123' })
+        .expect(200);
+
+      expect(attached.body.user.id).toBe(user.id);
+      expect(attached.body.accessToken).toBeTruthy();
+      expect(extractRefreshCookie(attached.headers['set-cookie'])).toContain(
+        'refresh_token=',
+      );
+
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: ssoEmail, password: 'attached-password-123' })
+        .expect(200);
+    });
+
+    it('не предлагает привязку пароля, если у аккаунта он уже есть', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/auth/register')
+        .send({ email, password })
+        .expect(409);
+
+      expect(res.body.canAttachPassword).toBe(false);
+      expect(res.body.message).toContain('Войдите способом');
+    });
+
+    it('не привязывает пароль к аккаунту, у которого он уже есть', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/register/attach-password')
+        .send({ email, password: 'another-password-123' })
+        .expect(409);
+    });
+
+    it('не привязывает пароль к несуществующему аккаунту', async () => {
+      await request(app.getHttpServer())
+        .post('/auth/register/attach-password')
+        .send({
+          email: `e2e-missing-${randomUUID().slice(0, 8)}@example.com`,
+          password: 'attached-password-123',
+        })
+        .expect(409);
     });
   });
 });

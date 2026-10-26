@@ -25,7 +25,7 @@ export class ExternalProvidersRegistry {
   require(slug: string): ExternalProvider {
     const provider = this.providers.get(slug);
     if (!provider) {
-      throw new NotFoundException(`Unknown external provider "${slug}"`);
+      throw new NotFoundException(`Неизвестный внешний провайдер «${slug}»`);
     }
     return provider;
   }

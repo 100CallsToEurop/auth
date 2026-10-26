@@ -26,7 +26,7 @@ export class LoginHandler implements ICommandHandler<LoginCommand> {
     );
 
     if (!user || !user.passwordHash || !passwordMatches) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw new UnauthorizedException('Неверный email или пароль');
     }
 
     return this.sessionService.start(user, command.meta);

@@ -32,19 +32,19 @@ export class JwtAuthGuard implements CanActivate {
       .getRequest<Request & { user?: { id: string; email: string } }>();
     const token = this.extractBearerToken(request);
     if (!token) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     const payload = await this.tokensService.verifyAccess(token);
     if (!payload) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     // Версия токенов: после «выйти со всех устройств» прежние access-токены
     // перестают приниматься, даже если не истекли.
     const current = await this.tokenVersionsRepository.findVersion(payload.sub);
     if ((payload.ver ?? 0) !== current) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     request.user = { id: payload.sub, email: payload.email };

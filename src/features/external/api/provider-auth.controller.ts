@@ -359,7 +359,7 @@ export class ProviderAuthController {
     const user = req.user as User | undefined;
     if (!user?.id) {
       throw new UnauthorizedException(
-        'External provider did not return a user',
+        'Внешний провайдер не вернул пользователя',
       );
     }
 

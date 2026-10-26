@@ -15,7 +15,7 @@ export class GetCurrentUserHandler implements IQueryHandler<GetCurrentUserQuery>
   async execute(query: GetCurrentUserQuery) {
     const user = await this.usersService.findById(query.userId);
     if (!user) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     const identities = await this.linkedAccounts.findByUserId(user.id);

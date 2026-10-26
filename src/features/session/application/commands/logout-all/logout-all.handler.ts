@@ -16,7 +16,7 @@ export class LogoutAllHandler implements ICommandHandler<LogoutAllCommand> {
     command: LogoutAllCommand,
   ): Promise<{ ok: true; revoked: number }> {
     if (!command.userId) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Требуется вход в аккаунт');
     }
 
     // «Завершить другие сессии» — сохраняем текущую, если её jti известен.

@@ -36,7 +36,7 @@ export class FrontendOriginGuard implements CanActivate {
       return true;
     }
 
-    throw new ForbiddenException('Origin is not allowed');
+    throw new ForbiddenException('Источник запроса не разрешён');
   }
 
   /** Разрешённые origin: CORS_ORIGIN, FRONTEND_URL и собственный origin запроса. */

@@ -105,14 +105,14 @@ describe('RefreshHandler', () => {
   it('rejects a missing token', async () => {
     await expect(
       handler.execute(new RefreshCommand(undefined)),
-    ).rejects.toThrow('Missing refresh token');
+    ).rejects.toThrow('Не передан refresh-токен');
   });
 
   it('rejects a token that is already in the bad-token list', async () => {
     badRefreshTokensRepository.isBlocked.mockResolvedValue(true);
 
     await expect(handler.execute(new RefreshCommand(rawToken))).rejects.toThrow(
-      'Refresh token is blocked',
+      'Refresh-токен заблокирован',
     );
     expect(tokensService.verifyRefresh).not.toHaveBeenCalled();
   });
@@ -123,7 +123,7 @@ describe('RefreshHandler', () => {
     tokensService.decodeRefresh.mockReturnValue({ sub: 'user-1', jti, exp });
 
     await expect(handler.execute(new RefreshCommand(rawToken))).rejects.toThrow(
-      'Invalid refresh token',
+      'Недействительный refresh-токен',
     );
     expect(badRefreshTokensRepository.block).toHaveBeenCalledWith(
       sha256(rawToken),
@@ -137,7 +137,7 @@ describe('RefreshHandler', () => {
     refreshTokensRepository.findByIdWithUser.mockResolvedValue(null);
 
     await expect(handler.execute(new RefreshCommand(rawToken))).rejects.toThrow(
-      'Refresh token revoked',
+      'Refresh-токен отозван',
     );
     expect(badRefreshTokensRepository.block).toHaveBeenCalledWith(
       sha256(rawToken),
@@ -154,7 +154,7 @@ describe('RefreshHandler', () => {
     });
 
     await expect(handler.execute(new RefreshCommand(rawToken))).rejects.toThrow(
-      'Refresh token expired',
+      'Срок действия refresh-токена истёк',
     );
     expect(refreshTokensRepository.revoke).toHaveBeenCalledWith(jti);
     expect(badRefreshTokensRepository.block).toHaveBeenCalledWith(
@@ -173,7 +173,7 @@ describe('RefreshHandler', () => {
     });
 
     await expect(handler.execute(new RefreshCommand(rawToken))).rejects.toThrow(
-      'Refresh token reuse detected',
+      'Обнаружено повторное использование refresh-токена',
     );
     expect(refreshTokensRepository.revokeFamily).toHaveBeenCalledWith(
       'family-1',
@@ -193,7 +193,7 @@ describe('RefreshHandler', () => {
     });
 
     await expect(handler.execute(new RefreshCommand(rawToken))).rejects.toThrow(
-      'Refresh token reuse detected',
+      'Обнаружено повторное использование refresh-токена',
     );
     expect(refreshTokensRepository.revokeFamily).toHaveBeenCalledWith(
       'family-1',
@@ -210,7 +210,7 @@ describe('RefreshHandler', () => {
     refreshTokensRepository.rotate.mockResolvedValue(false);
 
     await expect(handler.execute(new RefreshCommand(rawToken))).rejects.toThrow(
-      'Refresh token reuse detected',
+      'Обнаружено повторное использование refresh-токена',
     );
     expect(refreshTokensRepository.revokeFamily).toHaveBeenCalledWith(
       'family-1',

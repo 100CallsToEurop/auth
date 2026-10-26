@@ -24,13 +24,13 @@ export class RefreshHandler implements ICommandHandler<RefreshCommand> {
 
   async execute(command: RefreshCommand) {
     if (!command.token) {
-      throw new UnauthorizedException('Missing refresh token');
+      throw new UnauthorizedException('Не передан refresh-токен');
     }
 
     const tokenHash = this.tokensService.hashToken(command.token);
     // Токен уже отклоняли — повторно его даже не разбираем.
     if (await this.badRefreshTokensRepository.isBlocked(tokenHash)) {
-      throw new UnauthorizedException('Refresh token is blocked');
+      throw new UnauthorizedException('Refresh-токен заблокирован');
     }
 
     const payload = await this.tokensService.verifyRefresh(command.token);
@@ -41,7 +41,7 @@ export class RefreshHandler implements ICommandHandler<RefreshCommand> {
         'invalid',
         this.expiryOf(decoded ?? undefined),
       );
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new UnauthorizedException('Недействительный refresh-токен');
     }
 
     const record = await this.refreshTokensRepository.findByIdWithUser(
@@ -50,7 +50,7 @@ export class RefreshHandler implements ICommandHandler<RefreshCommand> {
     );
     if (!record) {
       await this.blockToken(command.token, 'unknown', this.expiryOf(payload));
-      throw new UnauthorizedException('Refresh token revoked');
+      throw new UnauthorizedException('Refresh-токен отозван');
     }
 
     // Токен уже отозван (ротация или выход) — значит его предъявили повторно.
@@ -58,19 +58,23 @@ export class RefreshHandler implements ICommandHandler<RefreshCommand> {
     if (record.revokedAt) {
       await this.blockToken(command.token, 'reuse', this.expiryOf(payload));
       await this.revokeFamily(record);
-      throw new UnauthorizedException('Refresh token reuse detected');
+      throw new UnauthorizedException(
+        'Обнаружено повторное использование refresh-токена',
+      );
     }
 
     if (record.expiresAt.getTime() < Date.now()) {
       await this.blockToken(command.token, 'expired', record.expiresAt);
       await this.refreshTokensRepository.revoke(record.id);
-      throw new UnauthorizedException('Refresh token expired');
+      throw new UnauthorizedException('Срок действия refresh-токена истёк');
     }
 
     if (record.tokenHash !== tokenHash) {
       await this.blockToken(command.token, 'reuse', this.expiryOf(payload));
       await this.revokeFamily(record);
-      throw new UnauthorizedException('Refresh token reuse detected');
+      throw new UnauthorizedException(
+        'Обнаружено повторное использование refresh-токена',
+      );
     }
 
     // Атомарная ротация: помечаем старый токен отозванным. Если это не
@@ -84,7 +88,9 @@ export class RefreshHandler implements ICommandHandler<RefreshCommand> {
     if (!rotated) {
       await this.blockToken(command.token, 'reuse', this.expiryOf(payload));
       await this.revokeFamily(record);
-      throw new UnauthorizedException('Refresh token reuse detected');
+      throw new UnauthorizedException(
+        'Обнаружено повторное использование refresh-токена',
+      );
     }
 
     // Переносим метаданные устройства в новую сессию (ротация токена —

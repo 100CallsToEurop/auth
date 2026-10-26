@@ -98,7 +98,7 @@ describe('ProviderAuthController', () => {
     const { res } = createResponse();
     await expect(
       controller.githubAuthCallback(createRequest(false), res),
-    ).rejects.toThrow('External provider did not return a user');
+    ).rejects.toThrow('Внешний провайдер не вернул пользователя');
   });
 
   it.each(['link', 'sync'] as const)(

@@ -147,13 +147,13 @@ describe('ExternalAccountLinker', () => {
     it('rejects a malformed email', async () => {
       await expect(
         linker.link('github', { ...PROFILE, email: 'not-an-email' }),
-      ).rejects.toThrow(/malformed/);
+      ).rejects.toThrow(/некорректный/);
     });
 
     it('rejects a profile without a subject or email', async () => {
       await expect(
         linker.link('github', { ...PROFILE, sub: '' }),
-      ).rejects.toThrow(/subject/);
+      ).rejects.toThrow(/идентификатор/);
       await expect(
         linker.link('github', { ...PROFILE, email: '' }),
       ).rejects.toThrow(/email/);
@@ -252,7 +252,7 @@ describe('ExternalAccountLinker', () => {
 
       await expect(
         linker.linkProvider('github', PROFILE, 'user-10'),
-      ).rejects.toThrow(/unauthorized|Unauthorized/i);
+      ).rejects.toThrow(/Требуется вход/);
     });
   });
 
@@ -306,12 +306,12 @@ describe('ExternalAccountLinker', () => {
     it('requires a subject and an existing user', async () => {
       await expect(
         linker.linkPendingIdentity('user-20', 'authentik', ' '),
-      ).rejects.toThrow(/subject/);
+      ).rejects.toThrow(/идентификатор/);
 
       usersRepository.findById.mockResolvedValue(null);
       await expect(
         linker.linkPendingIdentity('user-20', 'authentik', 'sub-20'),
-      ).rejects.toThrow(/unauthorized|Unauthorized/i);
+      ).rejects.toThrow(/Требуется вход/);
     });
   });
 
@@ -427,7 +427,7 @@ describe('ExternalAccountLinker', () => {
 
       await expect(
         linker.syncProvider('github', PROFILE, 'user-1'),
-      ).rejects.toThrow(/not linked/);
+      ).rejects.toThrow(/не привязан/);
       expect(usersRepository.save).not.toHaveBeenCalled();
     });
   });
@@ -467,7 +467,7 @@ describe('ExternalAccountLinker', () => {
       ]);
 
       await expect(linker.unlink('authentik', 'user-10')).rejects.toThrow(
-        /last sign-in method/,
+        /последний способ входа/,
       );
       expect(identitiesRepository.remove).not.toHaveBeenCalled();
     });
@@ -476,7 +476,7 @@ describe('ExternalAccountLinker', () => {
       identitiesRepository.findByUserIdAndProvider.mockResolvedValue(null);
 
       await expect(linker.unlink('github', 'user-1')).rejects.toThrow(
-        /not linked/,
+        /не привязан/,
       );
     });
   });

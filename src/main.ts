@@ -5,6 +5,7 @@ import session from 'express-session';
 import helmet from 'helmet';
 import { randomBytes } from 'node:crypto';
 import { AppModule } from './app.module.js';
+import { validationExceptionFactory } from './libs/common/validation/validation-exception.factory.js';
 
 const logger = new Logger('Bootstrap');
 
@@ -61,6 +62,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
       transform: true,
       transformOptions: { enableImplicitConversion: false },
+      exceptionFactory: validationExceptionFactory,
     }),
   );
 
