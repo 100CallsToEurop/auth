@@ -60,15 +60,6 @@ export class RefreshTokensRepository {
     return this.repository.save(record);
   }
 
-  /** Провайдер, которым была создана сессия (для выбора SSO-logout). */
-  async findProviderById(id: string): Promise<string | null> {
-    const record = await this.repository.findOne({
-      where: { id },
-      select: { id: true, provider: true },
-    });
-    return record?.provider ?? null;
-  }
-
   /**
    * Атомарная ротация: помечает токен отозванным и записывает, каким токеном
    * он заменён. Возвращает false, если токен уже был отозван (гонка двух

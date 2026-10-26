@@ -8,7 +8,7 @@ import {
 } from '../../../libs/consts/session.constants.js';
 import { REFRESH_TOKEN_TTL_MS } from '../../../libs/consts/token.constants.js';
 
-/** URL фронтенда для редиректов (OAuth callback, SSO-выход). */
+/** URL фронтенда для редиректов после OAuth callback. */
 export function frontendUrl(configService: ConfigService): string {
   return configService.get<string>('FRONTEND_URL') || 'http://localhost:3000';
 }

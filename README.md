@@ -49,8 +49,6 @@ external ──> user
   `auth` и `external` работают через `UsersService` и `LinkedAccountsService`.
 - `session` владеет жизненным циклом токенов и управлением сессиями:
   список устройств, отзыв одной сессии, «завершить другие» и `logout/all`.
-  Реестр внешних провайдеров вынесен в листовой `ExternalProvidersModule`,
-  чтобы `session` мог получить URL SSO-выхода без цикла с `external`.
 - `auth` отвечает за регистрацию, локальный вход, `refresh` и `logout`
   текущей сессии. `GET /auth/me`, как read-model пользователя, объявлен в
   `user`-модуле.
@@ -83,7 +81,7 @@ pnpm run start:prod     # прод
 | `JWT_ISSUER`                                                         | `auth-backend`          | claim `iss` в токенах                                                             |
 | `JWT_AUDIENCE`                                                       | `auth-frontend`         | claim `aud` в токенах                                                             |
 | `PORT`                                                               | `3000`                  | HTTP-порт                                                                         |
-| `FRONTEND_URL`                                                       | `http://localhost:3000` | Куда возвращать пользователя после входа и SSO-выхода                             |
+| `FRONTEND_URL`                                                       | `http://localhost:3000` | Куда возвращать пользователя после входа через провайдера                         |
 | `PUBLIC_API_URL`                                                     | `http://localhost:3000` | Публичный адрес API — используется в callback-URL провайдеров                     |
 | `CORS_ORIGIN`                                                        | `http://localhost:3000` | Список origin через запятую                                                       |
 | `AUTHENTIK_ISSUER`, `AUTHENTIK_CLIENT_ID`, `AUTHENTIK_CLIENT_SECRET` | —                       | OIDC-провайдер (всегда доступен в списке; ключи нужны для входа)                  |

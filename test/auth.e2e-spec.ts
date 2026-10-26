@@ -181,7 +181,11 @@ describe.skipIf(!dbAvailable)('Auth (e2e)', () => {
     await request(app.getHttpServer())
       .post('/auth/logout')
       .set('Cookie', cookie)
-      .expect(200);
+      .expect(200)
+      .expect((response) => {
+        // Выход не должен уводить на сторону SSO-провайдера.
+        expect(response.body.logoutUrl).toBeUndefined();
+      });
 
     await request(app.getHttpServer())
       .post('/auth/refresh')

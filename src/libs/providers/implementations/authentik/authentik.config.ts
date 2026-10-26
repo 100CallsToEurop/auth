@@ -21,7 +21,6 @@ export const authentikConfig = {
     authorize: 'authorize/',
     token: 'token/',
     userInfo: 'userinfo/',
-    endSession: 'end-session/',
   },
 
   /** Путь discovery-документа относительно issuer. */

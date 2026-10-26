@@ -16,10 +16,8 @@ import { CurrentUser } from '../../../libs/common/decorators/current-user.decora
 import { Public } from '../../../libs/common/decorators/public.decorator.js';
 import { emailTracker } from '../../../libs/common/throttle/trackers.js';
 import { REFRESH_COOKIE } from '../../../libs/consts/session.constants.js';
-import { SessionLogoutService } from '../../session/application/session-logout.service.js';
 import {
   clearRefreshCookie,
-  frontendUrl,
   sessionMeta,
   sessionResponse,
 } from '../../session/api/session-http.js';
@@ -40,7 +38,6 @@ export class AuthController {
     private readonly commandBus: CommandBus,
     private readonly queryBus: QueryBus,
     private readonly configService: ConfigService,
-    private readonly sessionLogoutService: SessionLogoutService,
   ) {}
 
   @Public()
@@ -124,17 +121,12 @@ export class AuthController {
   @Post('logout')
   @HttpCode(200)
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    // Провайдер берём из текущей сессии (каким способом вошли), а не из query.
-    const logoutUrl = await this.sessionLogoutService.providerLogoutUrl(
-      req.cookies?.[REFRESH_COOKIE],
-      frontendUrl(this.configService),
-    );
     const result = await this.commandBus.execute(
       new LogoutCommand(req.cookies?.[REFRESH_COOKIE]),
     );
     clearRefreshCookie(res, req, this.configService);
-    // RP-initiated logout: если текущая сессия из OIDC-провайдера, отдаём URL
-    // для выхода и из его SSO-сессии (фронт перейдёт по нему).
-    return { ...result, logoutUrl };
+    // Выходим только из приложения: SSO-сессия провайдера не завершается,
+    // чтобы не уводить пользователя на странице провайдера.
+    return result;
   }
 }

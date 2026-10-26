@@ -44,7 +44,7 @@ export class RefreshToken {
 
   /**
    * Способ входа, которым была создана сессия (slug провайдера или 'password').
-   * Нужен, чтобы при выходе знать, поддерживает ли провайдер RP-initiated logout.
+   * Отображается в списке активных сессий.
    */
   @Column({ name: 'provider', type: 'varchar', length: 32, nullable: true })
   provider: string | null;

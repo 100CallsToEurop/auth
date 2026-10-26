@@ -58,33 +58,6 @@ describe('AuthentikProvider', () => {
       }).emailVerified,
     ).toBe(true);
   });
-
-  it('builds the RP-initiated logout URL from the issuer', () => {
-    const linker = {} as ExternalAccountResolver;
-    const provider = new AuthentikProvider(
-      createConfigServiceMock({
-        AUTHENTIK_ISSUER: 'http://idp/application/o/app/',
-      }) as unknown as ConfigService,
-      linker,
-    );
-
-    const url = new URL(provider.logoutUrl('https://app.example.com/')!);
-    expect(url.origin + url.pathname).toBe(
-      'http://idp/application/o/app/end-session/',
-    );
-    expect(url.searchParams.get('post_logout_redirect_uri')).toBe(
-      'https://app.example.com/',
-    );
-  });
-
-  it('has no logout URL without an issuer', () => {
-    const linker = {} as ExternalAccountResolver;
-    const provider = new AuthentikProvider(
-      createConfigServiceMock({}) as unknown as ConfigService,
-      linker,
-    );
-    expect(provider.logoutUrl()).toBeNull();
-  });
 });
 
 describe('YandexProvider', () => {
