@@ -2,7 +2,6 @@ import {
   HttpException,
   Injectable,
   Logger,
-  NotFoundException,
   UnauthorizedException,
   type CanActivate,
   type ExecutionContext,
@@ -32,18 +31,16 @@ type GuardSession = {
  * Callback (есть code/state): вызываем с callback, требуем user, кладём его
  * в req.user для контроллера.
  *
- * Слаг провайдера берётся из :provider маршрута. Guard — обычный @Injectable
- * класс с DI, чтобы Nest корректно его инстанцировал.
+ * Для всех действий слаг закреплён за маршрутом: наследники задают
+ * fixedSlug. Guard — обычный @Injectable класс с DI, чтобы Nest корректно
+ * его инстанцировал.
  */
 @Injectable()
-export class ExternalAuthGuard implements CanActivate {
+export abstract class ExternalAuthGuard implements CanActivate {
   protected readonly mode: ExternalGuardMode = 'login';
 
-  /**
-   * Провайдер, жёстко закреплённый за маршрутом (например, /auth/github).
-   * Если не задан — slug берётся из :provider (универсальный /auth/external).
-   */
-  protected readonly fixedSlug: string | null = null;
+  /** Провайдер, жёстко закреплённый за маршрутом (например, github). */
+  protected abstract readonly fixedSlug: string;
 
   private readonly logger = new Logger(ExternalAuthGuard.name);
 
@@ -58,10 +55,7 @@ export class ExternalAuthGuard implements CanActivate {
     const request = http.getRequest<Request>();
     const response = http.getResponse<Response>();
 
-    const slug = this.fixedSlug ?? this.resolveSlug(request);
-    if (!slug) {
-      throw new NotFoundException('External provider is not specified');
-    }
+    const slug = this.fixedSlug;
     this.registry.require(slug);
 
     if (this.mode !== 'login') {
@@ -207,12 +201,6 @@ export class ExternalAuthGuard implements CanActivate {
     return { id: payload.sub };
   }
 
-  /** Слаг провайдера из маршрута (:provider). */
-  private resolveSlug(request: Request): string | null {
-    const param = request.params?.provider;
-    return typeof param === 'string' && param.length > 0 ? param : null;
-  }
-
   private describe(info: unknown): string {
     if (!info) {
       return '';
@@ -239,12 +227,12 @@ export class ExternalAuthGuard implements CanActivate {
 
 /** Guard синхронизации профиля: только для залогиненного пользователя. */
 @Injectable()
-export class ExternalSyncGuard extends ExternalAuthGuard {
+export abstract class ExternalSyncGuard extends ExternalAuthGuard {
   protected override readonly mode: ExternalGuardMode = 'sync';
 }
 
 /** Guard явной привязки провайдера: только для залогиненного пользователя. */
 @Injectable()
-export class ExternalLinkGuard extends ExternalAuthGuard {
+export abstract class ExternalLinkGuard extends ExternalAuthGuard {
   protected override readonly mode: ExternalGuardMode = 'link';
 }

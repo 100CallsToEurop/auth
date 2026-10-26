@@ -27,7 +27,7 @@ export abstract class AbstractExternalProvider implements ExternalProvider {
   protected callbackUrl(): string {
     return (
       this.configService.get<string>(this.configKey('CALLBACK_URL')) ??
-      `${this.publicApiUrl()}/api/auth/external/${this.slug}/callback`
+      `${this.publicApiUrl()}/api/auth/${this.slug}/callback`
     );
   }
 
@@ -109,16 +109,22 @@ export abstract class AbstractExternalProvider implements ExternalProvider {
     return (req: Request, profile: unknown) => {
       const session = req.session as
         { externalSync?: string; externalLink?: string } | undefined;
+      const action = req as Request & {
+        externalAction?: 'link' | 'sync';
+      };
       const linkUserId = session?.externalLink;
       if (linkUserId) {
         // флаг одноразовый — не влияем на последующие входы
         delete session?.externalLink;
+        // callback вернёт браузер на фронтенд, а не JSON с токеном
+        action.externalAction = 'link';
         return link(linkUserId, profile);
       }
       const syncUserId = session?.externalSync;
       if (syncUserId) {
         // флаг одноразовый — не влияем на последующие входы
         delete session?.externalSync;
+        action.externalAction = 'sync';
         return sync(syncUserId, profile);
       }
       return verify(profile);

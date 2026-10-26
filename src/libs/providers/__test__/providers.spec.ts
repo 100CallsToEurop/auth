@@ -126,7 +126,7 @@ describe('GitHubProvider', () => {
     );
     // @ts-expect-error проверка protected-метода
     expect(provider.callbackUrl()).toBe(
-      'https://auth.example.com/api/auth/external/github/callback',
+      'https://auth.example.com/api/auth/github/callback',
     );
   });
 

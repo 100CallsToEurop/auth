@@ -19,7 +19,7 @@ interface InvisionMember {
  *
  * Требует, чтобы в Invision был создан OAuth-клиент (ACP → API → OAuth
  * Clients) со redirect URI
- * ${PUBLIC_API_URL}/api/auth/external/invision/callback.
+ * ${PUBLIC_API_URL}/api/auth/invision/callback.
  */
 export class InvisionProvider extends AbstractOAuth2Provider {
   readonly slug = invisionConfig.slug;

@@ -4,26 +4,36 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { SessionModule } from '../session/session.module.js';
 import { UserModule } from '../user/user.module.js';
 import { ExternalAccountLinker } from './application/external-account-linker.js';
-import { ExternalController } from './api/external.controller.js';
 import { ProviderAuthController } from './api/provider-auth.controller.js';
-import {
-  ExternalAuthGuard,
-  ExternalLinkGuard,
-  ExternalSyncGuard,
-} from '../../libs/common/guards/external-auth.guard.js';
 import { FrontendOriginGuard } from '../../libs/common/guards/frontend-origin.guard.js';
 import { ExternalProvidersModule } from '../../libs/providers/common/registry/external-providers.module.js';
 import { ExternalStrategiesFactory } from '../../libs/providers/common/registry/external-strategies.factory.js';
+import {
+  AuthentikAuthGuard,
+  AuthentikLinkGuard,
+  AuthentikSyncGuard,
+} from '../../libs/providers/implementations/authentik/authentik.guard.js';
 import { AuthentikProvider } from '../../libs/providers/implementations/authentik/authentik.provider.js';
-import { AuthentikAuthGuard } from '../../libs/providers/implementations/authentik/authentik.guard.js';
 import { EXTERNAL_PROVIDERS } from '../../libs/consts/external.constants.js';
 import type { ExternalProvider } from '../../libs/providers/common/contracts/external-provider.js';
+import {
+  GithubAuthGuard,
+  GithubLinkGuard,
+  GithubSyncGuard,
+} from '../../libs/providers/implementations/github/github.guard.js';
 import { GitHubProvider } from '../../libs/providers/implementations/github/github.provider.js';
-import { GithubAuthGuard } from '../../libs/providers/implementations/github/github.guard.js';
+import {
+  InvisionAuthGuard,
+  InvisionLinkGuard,
+  InvisionSyncGuard,
+} from '../../libs/providers/implementations/invision/invision.guard.js';
 import { InvisionProvider } from '../../libs/providers/implementations/invision/invision.provider.js';
-import { InvisionAuthGuard } from '../../libs/providers/implementations/invision/invision.guard.js';
+import {
+  YandexAuthGuard,
+  YandexLinkGuard,
+  YandexSyncGuard,
+} from '../../libs/providers/implementations/yandex/yandex.guard.js';
 import { YandexProvider } from '../../libs/providers/implementations/yandex/yandex.provider.js';
-import { YandexAuthGuard } from '../../libs/providers/implementations/yandex/yandex.guard.js';
 
 /**
  * Внешний вход: провайдеры (Authentik/Яндекс/GitHub/Invision), их стратегии и
@@ -35,16 +45,21 @@ import { YandexAuthGuard } from '../../libs/providers/implementations/yandex/yan
  */
 @Module({
   imports: [CqrsModule, UserModule, SessionModule, ExternalProvidersModule],
-  controllers: [ExternalController, ProviderAuthController],
+  controllers: [ProviderAuthController],
   providers: [
     ExternalAccountLinker,
-    ExternalAuthGuard,
-    ExternalSyncGuard,
-    ExternalLinkGuard,
     GithubAuthGuard,
+    GithubLinkGuard,
+    GithubSyncGuard,
     AuthentikAuthGuard,
+    AuthentikLinkGuard,
+    AuthentikSyncGuard,
     InvisionAuthGuard,
+    InvisionLinkGuard,
+    InvisionSyncGuard,
     YandexAuthGuard,
+    YandexLinkGuard,
+    YandexSyncGuard,
     FrontendOriginGuard,
     ExternalStrategiesFactory,
     {

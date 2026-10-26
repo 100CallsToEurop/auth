@@ -13,9 +13,11 @@ function createRequest(withUser = true): Request {
 function createResponse(): {
   res: Response;
   cookie: ReturnType<typeof vi.fn>;
+  redirect: ReturnType<typeof vi.fn>;
 } {
   const cookie = vi.fn();
-  return { res: { cookie } as unknown as Response, cookie };
+  const redirect = vi.fn();
+  return { res: { cookie, redirect } as unknown as Response, cookie, redirect };
 }
 
 describe('ProviderAuthController', () => {
@@ -28,13 +30,20 @@ describe('ProviderAuthController', () => {
     }),
   };
   const configService = { get: vi.fn() };
+  const queryBus = { execute: vi.fn() };
+  const providersRegistry = { list: vi.fn() };
+  const linker = { unlink: vi.fn() };
   const controller = new ProviderAuthController(
     sessionService as unknown as SessionService,
     configService as never,
+    queryBus as never,
+    providersRegistry as never,
+    linker as never,
   );
 
   beforeEach(() => {
     vi.clearAllMocks();
+    configService.get.mockReset();
   });
 
   it.each([
@@ -82,4 +91,52 @@ describe('ProviderAuthController', () => {
       controller.githubAuthCallback(createRequest(false), res),
     ).rejects.toThrow('External provider did not return a user');
   });
+
+  it.each(['link', 'sync'] as const)(
+    'redirects to the frontend after %s',
+    async (externalAction) => {
+      const req = createRequest() as Request & {
+        externalAction?: 'link' | 'sync';
+      };
+      req.externalAction = externalAction;
+      const { res, cookie, redirect } = createResponse();
+      configService.get.mockImplementation((key: string) =>
+        key === 'FRONTEND_URL' ? 'https://front.example.com' : undefined,
+      );
+
+      await expect(
+        controller.githubAuthCallback(req, res),
+      ).resolves.toBeUndefined();
+
+      expect(cookie).toHaveBeenCalledWith(
+        'refresh_token',
+        'refresh-token',
+        expect.objectContaining({ httpOnly: true }),
+      );
+      expect(redirect).toHaveBeenCalledWith('https://front.example.com');
+    },
+  );
+
+  it('lists available providers', () => {
+    const providers = [{ slug: 'github', displayName: 'GitHub' }];
+    providersRegistry.list.mockReturnValueOnce(providers);
+
+    expect(controller.listProviders()).toEqual(providers);
+  });
+
+  it.each([
+    ['github', (user: never) => controller.unlinkGithub(user)],
+    ['authentik', (user: never) => controller.unlinkAuthentik(user)],
+    ['invision', (user: never) => controller.unlinkInvision(user)],
+    ['yandex', (user: never) => controller.unlinkYandex(user)],
+  ] as const)(
+    'unlinks %s from the current account',
+    async (provider, unlink) => {
+      const user = { id: 'user-1', email: 'user@example.com' };
+      queryBus.execute.mockResolvedValueOnce(user);
+
+      await expect(unlink(user as never)).resolves.toEqual(user);
+      expect(linker.unlink).toHaveBeenCalledWith(provider, 'user-1');
+    },
+  );
 });
