@@ -9,28 +9,47 @@ import { ListSessionsQuery } from '../application/queries/list-sessions/list-ses
 function createRepositoryMock() {
   return {
     findByUserId: vi.fn(),
-    removeAllByUserId: vi.fn(),
-    removeAllByUserIdExcept: vi.fn(),
-    removeByIdForUser: vi.fn(),
+    revokeAllByUserId: vi.fn(),
+    revokeAllByUserIdExcept: vi.fn(),
+    revokeByIdForUser: vi.fn(),
   };
+}
+
+function createCommandBusMock() {
+  return { execute: vi.fn().mockResolvedValue(undefined) };
 }
 
 describe('LogoutAllHandler', () => {
   const repository = createRepositoryMock();
-  const handler = new LogoutAllHandler(repository as never);
+  const commandBus = createCommandBusMock();
+  const handler = new LogoutAllHandler(
+    repository as never,
+    commandBus as never,
+  );
 
   beforeEach(() => {
     vi.clearAllMocks();
-    repository.removeAllByUserId.mockResolvedValue(3);
-    repository.removeAllByUserIdExcept.mockResolvedValue(2);
+    repository.revokeAllByUserId.mockResolvedValue(3);
+    repository.revokeAllByUserIdExcept.mockResolvedValue(2);
+    commandBus.execute.mockResolvedValue(undefined);
   });
 
   it('revokes every session of the user', async () => {
-    const result = await handler.execute(new LogoutAllCommand('user-1', 'jti-1'));
+    const result = await handler.execute(
+      new LogoutAllCommand('user-1', 'jti-1'),
+    );
 
-    expect(repository.removeAllByUserId).toHaveBeenCalledWith('user-1');
-    expect(repository.removeAllByUserIdExcept).not.toHaveBeenCalled();
+    expect(repository.revokeAllByUserId).toHaveBeenCalledWith('user-1');
+    expect(repository.revokeAllByUserIdExcept).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: true, revoked: 3 });
+  });
+
+  it('invalidates previously issued access tokens', async () => {
+    await handler.execute(new LogoutAllCommand('user-1', 'jti-1'));
+
+    expect(commandBus.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1' }),
+    );
   });
 
   it('keeps the current session when exceptCurrent is set', async () => {
@@ -38,18 +57,18 @@ describe('LogoutAllHandler', () => {
       new LogoutAllCommand('user-1', 'jti-1', true),
     );
 
-    expect(repository.removeAllByUserIdExcept).toHaveBeenCalledWith(
+    expect(repository.revokeAllByUserIdExcept).toHaveBeenCalledWith(
       'user-1',
       'jti-1',
     );
-    expect(repository.removeAllByUserId).not.toHaveBeenCalled();
+    expect(repository.revokeAllByUserId).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: true, revoked: 2 });
   });
 
   it('requires a user id', async () => {
-    await expect(
-      handler.execute(new LogoutAllCommand('')),
-    ).rejects.toThrow(UnauthorizedException);
+    await expect(handler.execute(new LogoutAllCommand(''))).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 });
 
@@ -62,16 +81,18 @@ describe('RevokeSessionHandler', () => {
   });
 
   it('revokes a session owned by the user', async () => {
-    repository.removeByIdForUser.mockResolvedValue(true);
+    repository.revokeByIdForUser.mockResolvedValue(true);
 
-    const result = await handler.execute(new RevokeSessionCommand('s-1', 'user-1'));
+    const result = await handler.execute(
+      new RevokeSessionCommand('s-1', 'user-1'),
+    );
 
-    expect(repository.removeByIdForUser).toHaveBeenCalledWith('s-1', 'user-1');
+    expect(repository.revokeByIdForUser).toHaveBeenCalledWith('s-1', 'user-1');
     expect(result).toEqual({ ok: true });
   });
 
-  it('throws 404 when the session is not the user\'s', async () => {
-    repository.removeByIdForUser.mockResolvedValue(false);
+  it("throws 404 when the session is not the user's", async () => {
+    repository.revokeByIdForUser.mockResolvedValue(false);
 
     await expect(
       handler.execute(new RevokeSessionCommand('s-x', 'user-1')),
@@ -107,15 +128,17 @@ describe('ListSessionsHandler', () => {
       },
     ]);
 
-    const result = await handler.execute(new ListSessionsQuery('user-1', 's-1'));
+    const result = await handler.execute(
+      new ListSessionsQuery('user-1', 's-1'),
+    );
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ id: 's-1', current: true });
   });
 
   it('requires a user id', async () => {
-    await expect(
-      handler.execute(new ListSessionsQuery('')),
-    ).rejects.toThrow(UnauthorizedException);
+    await expect(handler.execute(new ListSessionsQuery(''))).rejects.toThrow(
+      UnauthorizedException,
+    );
   });
 });

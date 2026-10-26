@@ -1,124 +1,238 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# auth-backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Сервис аутентификации: локальный вход (email + пароль) и вход через внешних
+провайдеров (Authentik/OIDC, Яндекс, GitHub, Invision Community).
+Отдаёт короткоживущий access-токен (JWT) и долгоживущий refresh-токен в
+httpOnly-cookie.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Структура модулей
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ pnpm install
+```
+src/
+├── app.module.ts          # composition root: сборка модулей и глобальные guard'ы
+├── libs/
+│   ├── common/            # декораторы, фильтры, throttle, guard'ы
+│   │   └── guards/        # JWT, external-auth и Origin guard'ы
+│   ├── consts/            # константы: TTL, cookie, БД, user-agent, DI-токены
+│   └── providers/         # внешние провайдеры
+│       ├── contracts/     # SPI: ExternalProvider, ExternalProfile, порт
+│       ├── base/          # абстрактные классы провайдеров
+│       ├── implementations/ # по папке на провайдера: config + provider
+│       └── registry/      # реестр, фабрика стратегий, листовой модуль
+└── features/
+    ├── user/              # листовой модуль: User + ExternalIdentity + профиль
+    ├── session/           # токены и управление сессиями: список, отзыв, logout/all
+    ├── auth/              # регистрация, вход, refresh и logout текущей сессии
+    └── external/          # OAuth/OIDC-провайдеры и привязка внешних аккаунтов
 ```
 
-## Compile and run the project
+На каждую папку — ровно один Nest-модуль: `external` и листовой
+`ExternalProvidersModule` в `libs/providers` разнесены, потому что объединение
+вернуло бы цикл `session ↔ external`.
 
-```bash
-# development
-$ pnpm run start
+Зависимости направлены только внутрь:
 
-# watch mode
-$ pnpm run start:dev
-
-# production mode
-$ pnpm run start:prod
+```
+auth ──────> user
+  └────────> session ──> libs/providers (листовой реестр)
+external ──> user
+  ├────────> session
+  └────────> libs/providers
 ```
 
-## Run tests
+- `libs/consts` и `libs/providers` не зависят от `features`: провайдеры работают
+  с аккаунтами через порт `ExternalAccountResolver`, а его реализация
+  (`ExternalAccountLinker`) живёт в `features/external`.
+- `libs/common/guards` — исключение: guard'ам нужны сервисы `session`
+  (`TokensService` и репозитории токенов).
+- `user` не зависит от других feature-модулей и не отдаёт наружу репозитории:
+  `auth` и `external` работают через `UsersService` и `LinkedAccountsService`.
+- `session` владеет жизненным циклом токенов и управлением сессиями:
+  список устройств, отзыв одной сессии, «завершить другие» и `logout/all`.
+  Реестр внешних провайдеров вынесен в листовой `ExternalProvidersModule`,
+  чтобы `session` мог получить URL SSO-выхода без цикла с `external`.
+- `auth` отвечает за регистрацию, локальный вход, `refresh` и `logout`
+  текущей сессии. `GET /auth/me`, как read-model пользователя, объявлен в
+  `user`-модуле.
+
+## Запуск
 
 ```bash
-# unit tests
-$ pnpm run test
-
-# e2e tests
-$ pnpm run test:e2e
-
-# test coverage
-$ pnpm run test:cov
+pnpm install
+pnpm run start:dev      # разработка (схема БД создаётся автоматически)
+pnpm run start:prod     # прод
 ```
 
-## Deployment
+## Переменные окружения
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+### Обязательные
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+| Переменная                                                                | Назначение                                                                                                                                 |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `JWT_SECRET`                                                              | Подпись access-токенов                                                                                                                     |
+| `JWT_REFRESH_SECRET`                                                      | Подпись refresh-токенов                                                                                                                    |
+| `SESSION_SECRET`                                                          | Подпись cookie express-сессии (в ней живут OAuth-state и PKCE-verifier). В `NODE_ENV=production` обязателен — иначе приложение не стартует |
+| `DATABASE_URL` (или `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE`) | Подключение к PostgreSQL                                                                                                                   |
+
+### Обычные
+
+| Переменная                                                           | По умолчанию            | Назначение                                                                        |
+| -------------------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------- |
+| `NODE_ENV`                                                           | —                       | `production` включает Secure-cookie и отключает `synchronize`                     |
+| `DB_SYNCHRONIZE`                                                     | `true` вне production   | Синхронизация схемы TypeORM. В production схема меняется вручную (см. «Схема БД») |
+| `JWT_ISSUER`                                                         | `auth-backend`          | claim `iss` в токенах                                                             |
+| `JWT_AUDIENCE`                                                       | `auth-frontend`         | claim `aud` в токенах                                                             |
+| `PORT`                                                               | `3000`                  | HTTP-порт                                                                         |
+| `FRONTEND_URL`                                                       | `http://localhost:3000` | Куда возвращать пользователя после входа и SSO-выхода                             |
+| `PUBLIC_API_URL`                                                     | `http://localhost:3000` | Публичный адрес API — используется в callback-URL провайдеров                     |
+| `CORS_ORIGIN`                                                        | `http://localhost:3000` | Список origin через запятую                                                       |
+| `AUTHENTIK_ISSUER`, `AUTHENTIK_CLIENT_ID`, `AUTHENTIK_CLIENT_SECRET` | —                       | OIDC-провайдер (всегда доступен в списке; ключи нужны для входа)                  |
+
+### Внешние провайдеры
+
+Для каждого провайдера `<SLUG>` (authentik, yandex, github, invision):
+
+| Переменная                                 | Назначение                                                                       |
+| ------------------------------------------ | -------------------------------------------------------------------------------- |
+| `<SLUG>_CLIENT_ID`, `<SLUG>_CLIENT_SECRET` | Клиент OAuth2. Провайдер всегда доступен в списке; без ключей вход не работает   |
+| `<SLUG>_CALLBACK_URL`                      | Callback-URL. По умолчанию `${PUBLIC_API_URL}/api/auth/external/<slug>/callback` |
+| `<SLUG>_SCOPES`                            | Запрашиваемые scope. По умолчанию — минимально необходимые                       |
+| `<SLUG>_PKCE`                              | `false` отключает PKCE (по умолчанию включён, метод S256)                        |
+| `INVISION_BASE_URL`                        | Адрес сообщества Invision (обязателен для этого провайдера)                      |
+
+Scope запрашиваются только сервером: пользователь видит их на странице согласия
+провайдера, но изменить их не может.
+
+## Схема БД
+
+В разработке схему создаёт TypeORM (`synchronize`). В production
+`synchronize` выключен, поэтому изменения схемы применяются вручную:
+
+```sql
+-- refresh-токены: семейство, отзыв и замена при ротации
+ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS family_id uuid NULL;
+ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS revoked_at timestamptz NULL;
+ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS replaced_by_id uuid NULL;
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_family_id ON refresh_tokens (family_id);
+
+-- версия токенов аккаунта («выйти со всех устройств»)
+CREATE TABLE IF NOT EXISTS user_token_versions (
+  user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  version integer NOT NULL DEFAULT 0
+);
+
+-- отклонённые refresh-токены (хранятся до истечения срока)
+CREATE TABLE IF NOT EXISTS bad_refresh_tokens (
+  token_hash varchar(64) PRIMARY KEY,
+  expires_at timestamptz NOT NULL,
+  reason varchar(32) NOT NULL DEFAULT 'invalid',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_bad_refresh_tokens_expires_at
+  ON bad_refresh_tokens (expires_at);
+
+-- перенос версии из старой колонки users.token_version (если она была)
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'users' AND column_name = 'token_version'
+  ) THEN
+    INSERT INTO user_token_versions (user_id, version)
+    SELECT id, token_version FROM users
+    ON CONFLICT (user_id) DO NOTHING;
+
+    ALTER TABLE users DROP COLUMN token_version;
+  END IF;
+END $$;
+```
+
+## Как устроен вход через провайдера
+
+Есть два варианта маршрутов.
+
+**Редирект на фронтенд (для SPA):**
+
+1. `GET /api/auth/external/:provider` — редирект к провайдеру. В сессии
+   сохраняются `state` и PKCE-verifier.
+2. `GET /api/auth/external/:provider/callback` — обработка ответа провайдера.
+   Refresh-токен кладётся в httpOnly-cookie, после чего браузер возвращается
+   на `FRONTEND_URL`.
+
+**Отдельный маршрут на провайдера (accessToken в теле):**
+
+- `GET /api/auth/github` → `/api/auth/github/callback`
+- `GET /api/auth/authentik` → `/api/auth/authentik/callback`
+- `GET /api/auth/invision` → `/api/auth/invision/callback`
+- `GET /api/auth/yandex` → `/api/auth/yandex/callback`
+
+Callback возвращает `{ accessToken }` в теле и, как в первом варианте, ставит
+refresh-токен в httpOnly-cookie. Это удобно для API-клиентов и мобильных
+приложений; SPA может продолжать использовать `/auth/external/:provider`.
+
+В обоих случаях аккаунт ищется по паре `(provider, sub)`; если аккаунта нет —
+создаётся новый.
+
+**Слияния аккаунтов по email не происходит.** Если аккаунт с таким email уже
+существует, вход отклоняется с `409`: иначе можно было бы завести аккаунт на
+чужой адрес и войти в чужой аккаунт через провайдера. Привязать провайдера к
+существующему аккаунту можно явно из профиля:
+
+- `POST /api/auth/external/:provider/link` — привязка (пользователь уже вошёл);
+- `POST /api/auth/external/:provider/sync` — обновление профиля из провайдера.
+
+Оба маршрута — только POST: refresh-cookie имеет `SameSite=Lax` и не отправляется
+на кросс-сайтовом POST, поэтому состояние меняется лишь для владельца сессии.
+
+Дополнительно у этих маршрутов проверяется `Origin` запроса: он должен
+совпадать с `CORS_ORIGIN`/`FRONTEND_URL` (или с origin самого API). Cookie с
+`SameSite=Lax` уходит и на кросс-сайтовый POST, если фронтенд и API живут на
+одном сайте (разные поддомены) — проверка Origin закрывает этот случай.
+Запросы без `Origin` (curl, серверные клиенты) пропускаются: там доступ
+контролирует сама сессия.
+
+## Refresh-токены
+
+- Ротация при каждом обновлении: старый токен отзывается, выдаётся новый.
+- Токены объединены в семейство (`family_id`). Повторное предъявление уже
+  использованного токена считается кражей: отзывается всё семейство, вход
+  требуется заново.
+- Ротация атомарна (`UPDATE ... WHERE revoked_at IS NULL`): параллельный
+  refresh не может выдать два действующих токена.
+- «Выйти со всех устройств» отзывает все refresh-сессии и увеличивает
+  версию токенов аккаунта (`user_token_versions.version`) — ранее выданные
+  access-токены перестают работать до истечения своего срока.
+- Отклонённые refresh-токены (невалидная подпись, истёкший, отозванный или
+  повторно предъявленный токен) сохраняются в `bad_refresh_tokens` по хешу.
+  Запись живёт до `exp`, после чего удаляется, а сам токен повторно не
+  принимается.
+
+## Защита на уровне HTTP
+
+- `helmet` — защитные заголовки (HSTS, `X-Content-Type-Options`,
+  `X-Frame-Options`). CSP выключен: API отдаёт только JSON.
+- Глобальный `ValidationPipe` с `whitelist` и `forbidNonWhitelisted`: лишние
+  поля в запросе — ошибка 400, а не молчаливое игнорирование.
+- Throttling (`@nestjs/throttler`): общий лимит 300 запросов в минуту, на
+  вход — 10 за 5 минут, на регистрацию — 10 за 10 минут, на обновление
+  токена — 60 в минуту. Вход дополнительно ограничивается по email.
+- `QueryFailedFilter`: нарушение уникальности (`23505`) → 409 вместо 500.
+- Вход по паролю всегда сверяется с bcrypt-хэшем (заглушкой), чтобы время
+  ответа не зависело от существования email.
+
+## Тесты
 
 ```bash
-$ pnpm install -g @nestjs/mau
-$ mau deploy
+pnpm run test       # unit
+pnpm run test:e2e   # e2e (нужна доступная БД)
+pnpm run lint
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Ограничения
 
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-To add it to this project:
-
-```bash
-$ pnpm install @nestjs/observe
-```
-
-Then follow the [setup guide](https://docs.nestjs.com/observability/overview) - it takes a single import and an app key.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- `express-session` работает на встроенном хранилище: сессии теряются при
+  перезапуске процесса и не разделяются между инстансами. Для продакшена с
+  несколькими репликами нужен внешний session-store.
+- Authentik (OIDC) работает без PKCE: библиотека `passport-openidconnect` не
+  поддерживает `code_challenge`. Для OAuth2-провайдеров (Яндекс, GitHub,
+  Invision) PKCE включён.

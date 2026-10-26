@@ -25,7 +25,7 @@ export class RefreshToken {
   createdAt: Date;
 
   @Index()
-  @ManyToOne(() => User, (user) => user.refreshTokens, {
+  @ManyToOne(() => User, {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'user_id' })
@@ -48,4 +48,20 @@ export class RefreshToken {
    */
   @Column({ name: 'provider', type: 'varchar', length: 32, nullable: true })
   provider: string | null;
+
+  /**
+   * Семейство токенов: все refresh-токены одной сессии (включая ротации).
+   * Если такой токен снова предъявлен — значит его украли, и всё семейство
+   * отзывается (reuse detection).
+   */
+  @Column({ name: 'family_id', type: 'uuid', nullable: true })
+  familyId: string | null;
+
+  /** Когда токен был отозван или заменён при ротации. null = активен. */
+  @Column({ name: 'revoked_at', type: 'timestamptz', nullable: true })
+  revokedAt: Date | null;
+
+  /** Токен, заменивший этот при ротации. */
+  @Column({ name: 'replaced_by_id', type: 'uuid', nullable: true })
+  replacedById: string | null;
 }

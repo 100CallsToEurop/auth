@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { ExternalAccountLinker } from '../application/external-account-linker.js';
 
 function createUsersRepositoryMock() {
@@ -25,6 +26,7 @@ const PROFILE = {
   firstName: 'Иван',
   lastName: 'Иванов',
   displayName: 'Иванов Иван',
+  emailVerified: true,
 };
 
 describe('ExternalAccountLinker', () => {
@@ -49,150 +51,189 @@ describe('ExternalAccountLinker', () => {
     );
   });
 
-  it('creates a user and an identity when none match', async () => {
-    const user = await linker.link('authentik', PROFILE);
+  describe('link (вход через провайдера)', () => {
+    it('creates a user and an identity when none match', async () => {
+      const user = await linker.link('authentik', PROFILE);
 
-    expect(usersRepository.create).toHaveBeenCalledWith({
-      email: 'new@example.com',
-      passwordHash: null,
-      firstName: 'Иван',
-      lastName: 'Иванов',
-      displayName: 'Иванов Иван',
+      expect(usersRepository.create).toHaveBeenCalledWith({
+        email: 'new@example.com',
+        passwordHash: null,
+        firstName: 'Иван',
+        lastName: 'Иванов',
+        displayName: 'Иванов Иван',
+      });
+      expect(identitiesRepository.create).toHaveBeenCalledWith({
+        userId: 'user-1',
+        provider: 'authentik',
+        providerSub: 'sub-1',
+      });
+      expect(user.id).toBe('user-1');
     });
-    expect(identitiesRepository.create).toHaveBeenCalledWith({
-      userId: 'user-1',
-      provider: 'authentik',
-      providerSub: 'sub-1',
-    });
-    expect(user.id).toBe('user-1');
-  });
 
-  it('is idempotent when the unique identity already exists (race)', async () => {
-    const stored = {
-      id: 'user-race',
-      email: 'race@example.com',
-      firstName: null,
-      lastName: null,
-      displayName: null,
-    };
-    // findByProvider не нашёл запись (параллельный callback уже создал её),
-    // пользователь найден по email, но create падает на уникальном индексе.
-    identitiesRepository.findByProvider
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
+    it('returns the already linked user on a repeated login', async () => {
+      const stored = {
+        id: 'user-2',
+        email: 'old@example.com',
+        firstName: 'Старое',
+        lastName: null,
+        displayName: null,
+      };
+      identitiesRepository.findByProvider.mockResolvedValue({
+        id: 'link-2',
+        userId: 'user-2',
+        provider: 'github',
+        providerSub: 'sub-2',
+      });
+      usersRepository.findById.mockResolvedValue(stored);
+
+      const user = await linker.link('github', {
+        sub: 'sub-2',
+        email: 'new@example.com',
+        firstName: 'Новое',
+        lastName: null,
+        displayName: null,
+        emailVerified: true,
+      });
+
+      expect(usersRepository.create).not.toHaveBeenCalled();
+      expect(user.email).toBe('old@example.com');
+      expect(user.firstName).toBe('Старое');
+      expect(usersRepository.save).not.toHaveBeenCalled();
+      expect(identitiesRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('does NOT merge with an existing account by email (no takeover)', async () => {
+      usersRepository.findByEmail.mockResolvedValue({
+        id: 'user-victim',
+        email: 'victim@example.com',
+        passwordHash: 'local-hash',
+      });
+
+      await expect(
+        linker.link('yandex', {
+          sub: 'sub-4',
+          email: 'victim@example.com',
+          firstName: null,
+          lastName: null,
+          displayName: null,
+          emailVerified: true,
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+
+      expect(usersRepository.create).not.toHaveBeenCalled();
+      expect(identitiesRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a malformed email', async () => {
+      await expect(
+        linker.link('github', { ...PROFILE, email: 'not-an-email' }),
+      ).rejects.toThrow(/malformed/);
+    });
+
+    it('rejects a profile without a subject or email', async () => {
+      await expect(
+        linker.link('github', { ...PROFILE, sub: '' }),
+      ).rejects.toThrow(/subject/);
+      await expect(
+        linker.link('github', { ...PROFILE, email: '' }),
+      ).rejects.toThrow(/email/);
+    });
+
+    it('is idempotent when the unique identity already exists (race)', async () => {
+      // findByProvider не нашёл запись (параллельный callback уже создал её),
+      // create падает на уникальном индексе email.
+      identitiesRepository.findByProvider.mockResolvedValueOnce(null);
+      identitiesRepository.findByProvider.mockResolvedValueOnce({
         id: 'link-race',
         userId: 'user-race',
         provider: 'authentik',
         providerSub: 'sub-1',
       });
-    usersRepository.findByEmail.mockResolvedValue(stored);
-    const uniqueViolation = Object.assign(new Error('duplicate key'), {
-      code: '23505',
-    });
-    identitiesRepository.create.mockRejectedValueOnce(uniqueViolation);
+      usersRepository.findByEmail.mockResolvedValue(null);
+      usersRepository.create.mockRejectedValueOnce(
+        Object.assign(new Error('duplicate key'), { code: '23505' }),
+      );
+      usersRepository.findById.mockResolvedValue({
+        id: 'user-race',
+        email: 'race@example.com',
+      });
 
-    const user = await linker.link('authentik', PROFILE);
+      const user = await linker.link('authentik', PROFILE);
 
-    expect(user.id).toBe('user-race');
-    expect(identitiesRepository.create).toHaveBeenCalledTimes(1);
-    expect(usersRepository.create).not.toHaveBeenCalled();
-  });
-
-  it('does NOT update the profile on login (only links)', async () => {    const stored = {
-      id: 'user-2',
-      email: 'old@example.com',
-      firstName: 'Старое',
-      lastName: null,
-      displayName: null,
-    };
-    identitiesRepository.findByProvider.mockResolvedValue({
-      id: 'link-2',
-      userId: 'user-2',
-      provider: 'github',
-      providerSub: 'sub-2',
-    });
-    usersRepository.findById.mockResolvedValue(stored);
-
-    const user = await linker.link('github', {
-      sub: 'sub-2',
-      email: 'new@example.com',
-      firstName: 'Новое',
-      lastName: null,
-      displayName: null,
+      expect(user.id).toBe('user-race');
+      expect(usersRepository.create).toHaveBeenCalledTimes(1);
     });
 
-    expect(usersRepository.create).not.toHaveBeenCalled();
-    expect(user.email).toBe('old@example.com');
-    expect(user.firstName).toBe('Старое');
-    expect(usersRepository.save).not.toHaveBeenCalled();
-    expect(identitiesRepository.create).not.toHaveBeenCalled();
-  });
+    it('tolerates a race on the identity (unique provider+sub)', async () => {
+      identitiesRepository.create.mockRejectedValueOnce(
+        Object.assign(new Error('duplicate key'), { code: '23505' }),
+      );
+      identitiesRepository.findByProvider
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          id: 'link-existing',
+          userId: 'user-existing',
+          provider: 'authentik',
+          providerSub: 'sub-1',
+        });
 
-  it('links a provider to an account that already exists by email', async () => {
-    const existing = {
-      id: 'user-4',
-      email: 'a@b.c',
-      passwordHash: 'local-hash',
-      firstName: null,
-      lastName: null,
-      displayName: null,
-    };
-    usersRepository.findByEmail.mockResolvedValue(existing);
+      const user = await linker.link('authentik', PROFILE);
 
-    const user = await linker.link('yandex', {
-      sub: 'sub-4',
-      email: 'a@b.c',
-      firstName: null,
-      lastName: null,
-      displayName: null,
-    });
-
-    expect(user.id).toBe('user-4');
-    expect(user.passwordHash).toBe('local-hash');
-    expect(identitiesRepository.create).toHaveBeenCalledWith({
-      userId: 'user-4',
-      provider: 'yandex',
-      providerSub: 'sub-4',
+      expect(user.id).toBe('user-1');
+      expect(identitiesRepository.create).toHaveBeenCalledTimes(1);
     });
   });
 
-  it('keeps the old email when the new one belongs to another account', async () => {
-    const stored = {
-      id: 'user-5',
-      email: 'old@example.com',
-      firstName: null,
-      lastName: null,
-      displayName: null,
-    };
-    identitiesRepository.findByProvider.mockResolvedValue({
-      id: 'link-5',
-      userId: 'user-5',
-    });
-    usersRepository.findById.mockResolvedValue(stored);
-    usersRepository.findByEmail.mockResolvedValue({
-      id: 'user-6',
-      email: 'taken@example.com',
+  describe('linkProvider (явная привязка из профиля)', () => {
+    it('links the provider to the current user', async () => {
+      const stored = { id: 'user-10', email: 'me@example.com' };
+      usersRepository.findById.mockResolvedValue(stored);
+
+      const user = await linker.linkProvider('github', PROFILE, 'user-10');
+
+      expect(user.id).toBe('user-10');
+      expect(identitiesRepository.create).toHaveBeenCalledWith({
+        userId: 'user-10',
+        provider: 'github',
+        providerSub: 'sub-1',
+      });
     });
 
-    const user = await linker.link('github', {
-      sub: 'sub-5',
-      email: 'taken@example.com',
-      firstName: null,
-      lastName: null,
-      displayName: null,
+    it('is idempotent when the provider is already linked to the same user', async () => {
+      usersRepository.findById.mockResolvedValue({ id: 'user-10' });
+      identitiesRepository.findByProvider.mockResolvedValue({
+        id: 'link-11',
+        userId: 'user-10',
+        provider: 'github',
+      });
+
+      const user = await linker.linkProvider('github', PROFILE, 'user-10');
+
+      expect(user.id).toBe('user-10');
+      expect(identitiesRepository.create).not.toHaveBeenCalled();
     });
 
-    expect(user.email).toBe('old@example.com');
-    expect(usersRepository.save).not.toHaveBeenCalled();
-  });
+    it('refuses to link a provider that belongs to another user', async () => {
+      usersRepository.findById.mockResolvedValue({ id: 'user-10' });
+      identitiesRepository.findByProvider.mockResolvedValue({
+        id: 'link-12',
+        userId: 'user-other',
+        provider: 'github',
+      });
 
-  it('rejects a profile without a subject or email', async () => {
-    await expect(
-      linker.link('github', { ...PROFILE, sub: '' }),
-    ).rejects.toThrow(/subject/);
-    await expect(
-      linker.link('github', { ...PROFILE, email: '' }),
-    ).rejects.toThrow(/email/);
+      await expect(
+        linker.linkProvider('github', PROFILE, 'user-10'),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(identitiesRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects when the user does not exist', async () => {
+      usersRepository.findById.mockResolvedValue(null);
+
+      await expect(
+        linker.linkProvider('github', PROFILE, 'user-10'),
+      ).rejects.toThrow(/unauthorized|Unauthorized/i);
+    });
   });
 
   describe('syncProvider', () => {
@@ -221,6 +262,7 @@ describe('ExternalAccountLinker', () => {
           firstName: 'Новое',
           lastName: 'Новое',
           displayName: 'Новое Новое',
+          emailVerified: true,
         },
         'user-7',
       );
@@ -230,6 +272,72 @@ describe('ExternalAccountLinker', () => {
       expect(user.lastName).toBe('Новое');
       expect(user.displayName).toBe('Новое Новое');
       expect(usersRepository.save).toHaveBeenCalledWith(stored);
+    });
+
+    it('does not apply an unverified email from the provider', async () => {
+      const stored = {
+        id: 'user-8',
+        email: 'old@example.com',
+        firstName: 'Старое',
+        lastName: null,
+        displayName: null,
+      };
+      identitiesRepository.findByProvider.mockResolvedValue({
+        id: 'link-8',
+        userId: 'user-8',
+        provider: 'yandex',
+        providerSub: 'sub-8',
+      });
+      usersRepository.findById.mockResolvedValue(stored);
+
+      const user = await linker.syncProvider(
+        'yandex',
+        {
+          sub: 'sub-8',
+          email: 'attacker@example.com',
+          firstName: null,
+          lastName: null,
+          displayName: null,
+          emailVerified: false,
+        },
+        'user-8',
+      );
+
+      expect(user.email).toBe('old@example.com');
+    });
+
+    it('keeps the old email when the new one belongs to another account', async () => {
+      const stored = {
+        id: 'user-5',
+        email: 'old@example.com',
+        firstName: null,
+        lastName: null,
+        displayName: null,
+      };
+      identitiesRepository.findByProvider.mockResolvedValue({
+        id: 'link-5',
+        userId: 'user-5',
+      });
+      usersRepository.findById.mockResolvedValue(stored);
+      usersRepository.findByEmail.mockResolvedValue({
+        id: 'user-6',
+        email: 'taken@example.com',
+      });
+
+      const user = await linker.syncProvider(
+        'github',
+        {
+          sub: 'sub-5',
+          email: 'taken@example.com',
+          firstName: null,
+          lastName: null,
+          displayName: null,
+          emailVerified: true,
+        },
+        'user-5',
+      );
+
+      expect(user.email).toBe('old@example.com');
     });
 
     it('rejects when the provider is not linked to the current user', async () => {

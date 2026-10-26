@@ -1,6 +1,6 @@
 import net from 'node:net';
 
-export function getDatabaseAddress(): { host: string; port: number } {
+function getDatabaseAddress(): { host: string; port: number } {
   const url = process.env.DATABASE_URL;
   if (url) {
     try {

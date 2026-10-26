@@ -1,65 +1,121 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { User } from '../../user/domain/user.entity.js';
-import { ExternalIdentitysRepository } from '../repository/external-identities.repository.js';
-import { UsersRepository } from '../../user/repository/users.repository.js';
-import type { ExternalProfile } from '../domain/external-profile.js';
+import { LinkedAccountsService } from '../../user/application/linked-accounts.service.js';
+import { UsersService } from '../../user/application/users.service.js';
+import { EMAIL_PATTERN } from '../../../libs/consts/validation.constants.js';
+import type { ExternalAccountResolver } from '../../../libs/providers/common/contracts/external-account-resolver.js';
+import type { ExternalProfile } from '../../../libs/providers/common/contracts/external-profile.js';
 
 /**
  * Связывание внешнего аккаунта с локальным пользователем — общий алгоритм
  * для всех провайдеров (Authentik, Яндекс, GitHub):
  *
  * 1. поиск по стабильному идентификатору (provider, sub) в
- *    external_identities;
- * 2. поиск по email — вход в существующий аккаунт (например, созданного по
- *    паролю) с привязкой нового провайдера;
- * 3. создание нового пользователя + привязка.
+ *    external_identities — повторный вход в уже привязанный аккаунт;
+ * 2. создание нового пользователя + привязка.
+ *
+ * Слияние с существующим аккаунтом ТОЛЬКО по email запрещено. Раньше вход
+ * через провайдера с чужим email привязывался к уже созданному локальному
+ * аккаунту, а значит злоумышленник мог завести аккаунт на чужой адрес
+ * (регистрация почту не подтверждает) и войти в него через провайдера,
+ * получив доступ к чужому аккаунту. Привязать провайдер к существующему
+ * аккаунту можно только явно — из профиля, когда пользователь уже вошёл
+ * (см. linkProvider).
  *
  * ВАЖНО: сам по себе вход НЕ обновляет профиль (email/ФИО) — данные берутся
  * у провайдера только при явной синхронизации (syncProvider).
  */
 @Injectable()
-export class ExternalAccountLinker {
+export class ExternalAccountLinker implements ExternalAccountResolver {
   private readonly logger = new Logger(ExternalAccountLinker.name);
 
   constructor(
-    private readonly usersRepository: UsersRepository,
-    private readonly identitiesRepository: ExternalIdentitysRepository,
+    private readonly usersService: UsersService,
+    private readonly linkedAccounts: LinkedAccountsService,
   ) {}
 
   async link(provider: string, profile: ExternalProfile): Promise<User> {
     const sub = this.requireSubject(provider, profile);
 
-    let record = await this.identitiesRepository.findByProvider(provider, sub);
-    let user = record
-      ? await this.usersRepository.findById(record.userId)
-      : null;
-
-    if (!user) {
-      const email = this.requireEmail(provider, profile);
-      user = await this.usersRepository.findByEmail(email);
+    const record = await this.linkedAccounts.findByProvider(provider, sub);
+    if (record) {
+      const linked = await this.usersService.findById(record.userId);
+      if (linked) {
+        return linked;
+      }
     }
 
-    if (!user) {
-      user = await this.usersRepository.create({
-        email: this.requireEmail(provider, profile),
+    const email = this.requireEmail(provider, profile);
+
+    const existing = await this.usersService.findByEmail(email);
+    if (existing) {
+      throw new ConflictException(
+        `An account with email ${email} already exists. ` +
+          `Sign in with it and link ${provider} in your profile settings.`,
+      );
+    }
+
+    let user: User;
+    try {
+      user = await this.usersService.create({
+        email,
         passwordHash: null,
         firstName: profile.firstName?.trim() || null,
         lastName: profile.lastName?.trim() || null,
         displayName: profile.displayName?.trim() || null,
       });
-      await this.ensureIdentity(user.id, provider, sub);
-      return user;
+    } catch (error) {
+      // Параллельный callback успел создать ту же привязку — отдаём его
+      // аккаунт вместо ошибки.
+      const created = await this.linkedAccounts.findByProvider(provider, sub);
+      const raced = created
+        ? await this.usersService.findById(created.userId)
+        : null;
+      if (raced) {
+        return raced;
+      }
+      throw error;
     }
 
-    if (!record) {
-      await this.ensureIdentity(user.id, provider, sub);
+    await this.ensureIdentity(user.id, provider, sub);
+    return user;
+  }
+
+  /**
+   * Явная привязка провайдера к аккаунту, который уже авторизован
+   * пользователем (страница профиля). Email при этом не сверяется: владение
+   * аккаунтом подтверждено самой сессией, а токен провайдера — тем, что
+   * пользователь только что авторизовался у него.
+   */
+  async linkProvider(
+    provider: string,
+    profile: ExternalProfile,
+    userId: string,
+  ): Promise<User> {
+    const sub = this.requireSubject(provider, profile);
+
+    const user = await this.usersService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException();
     }
 
+    const existing = await this.linkedAccounts.findByProvider(provider, sub);
+    if (existing) {
+      if (existing.userId === userId) {
+        return user;
+      }
+      throw new ConflictException(
+        `This ${provider} account is already linked to another user`,
+      );
+    }
+
+    await this.ensureIdentity(userId, provider, sub);
     return user;
   }
 
@@ -74,9 +130,9 @@ export class ExternalAccountLinker {
     providerSub: string,
   ): Promise<void> {
     try {
-      await this.identitiesRepository.create({ userId, provider, providerSub });
+      await this.linkedAccounts.create({ userId, provider, providerSub });
     } catch (error) {
-      const existing = await this.identitiesRepository.findByProvider(
+      const existing = await this.linkedAccounts.findByProvider(
         provider,
         providerSub,
       );
@@ -97,23 +153,22 @@ export class ExternalAccountLinker {
   ): Promise<User> {
     const sub = this.requireSubject(provider, profile);
 
-    const record = await this.identitiesRepository.findByProvider(
-      provider,
-      sub,
-    );
+    const record = await this.linkedAccounts.findByProvider(provider, sub);
     if (!record || record.userId !== userId) {
       throw new BadRequestException(
         `Provider ${provider} is not linked to the current account`,
       );
     }
 
-    const user = await this.usersRepository.findById(userId);
+    const user = await this.usersService.findById(userId);
     if (!user) {
       throw new UnauthorizedException();
     }
 
     return this.applyProfile(user, {
-      email: this.requireEmail(provider, profile),
+      // Неподтверждённую почту не переносим на аккаунт: иначе провайдер
+      // мог бы подменить email пользователя.
+      email: profile.emailVerified ? this.requireEmail(provider, profile) : '',
       firstName: profile.firstName?.trim() || null,
       lastName: profile.lastName?.trim() || null,
       displayName: profile.displayName?.trim() || null,
@@ -125,7 +180,7 @@ export class ExternalAccountLinker {
    * аккаунта нет пароля и это последний способ входа (иначе потеря доступа).
    */
   async unlink(provider: string, userId: string): Promise<void> {
-    const record = await this.identitiesRepository.findByUserIdAndProvider(
+    const record = await this.linkedAccounts.findByUserIdAndProvider(
       userId,
       provider,
     );
@@ -135,20 +190,18 @@ export class ExternalAccountLinker {
       );
     }
 
-    const user = await this.usersRepository.findById(userId);
+    const user = await this.usersService.findById(userId);
     if (!user) {
       throw new UnauthorizedException();
     }
 
-    const identities = await this.identitiesRepository.findByUserId(userId);
+    const identities = await this.linkedAccounts.findByUserId(userId);
     const remaining = identities.filter((i) => i.id !== record.id).length;
     if (!user.passwordHash && remaining === 0) {
-      throw new BadRequestException(
-        'Cannot unlink the last sign-in method',
-      );
+      throw new BadRequestException('Cannot unlink the last sign-in method');
     }
 
-    await this.identitiesRepository.remove(record.id);
+    await this.linkedAccounts.remove(record.id);
   }
 
   private requireSubject(provider: string, profile: ExternalProfile): string {
@@ -168,6 +221,11 @@ export class ExternalAccountLinker {
         `Provider ${provider} did not return an email`,
       );
     }
+    if (!EMAIL_PATTERN.test(email)) {
+      throw new UnauthorizedException(
+        `Provider ${provider} returned a malformed email`,
+      );
+    }
     return email;
   }
 
@@ -182,8 +240,8 @@ export class ExternalAccountLinker {
   ): Promise<User> {
     let dirty = false;
 
-    if (data.email !== user.email) {
-      const owner = await this.usersRepository.findByEmail(data.email);
+    if (data.email && data.email !== user.email) {
+      const owner = await this.usersService.findByEmail(data.email);
       if (owner && owner.id !== user.id) {
         this.logger.warn(
           `Почта ${data.email} уже занята другим аккаунтом — ` +
@@ -209,7 +267,7 @@ export class ExternalAccountLinker {
     }
 
     if (dirty) {
-      await this.usersRepository.save(user);
+      await this.usersService.save(user);
     }
 
     return user;

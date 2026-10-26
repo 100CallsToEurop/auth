@@ -14,7 +14,10 @@ describe('parseDevice', () => {
   it('parses Firefox on Windows', () => {
     const ua =
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0';
-    expect(parseDevice(ua)).toMatchObject({ browser: 'Firefox', os: 'Windows' });
+    expect(parseDevice(ua)).toMatchObject({
+      browser: 'Firefox',
+      os: 'Windows',
+    });
   });
 
   it('parses iPhone Safari as mobile iOS', () => {

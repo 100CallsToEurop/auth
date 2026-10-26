@@ -7,8 +7,7 @@ import {
   PrimaryGeneratedColumn,
   type Relation,
 } from 'typeorm';
-import { RefreshToken } from '../../session/domain/refresh-token.entity.js';
-import { ExternalIdentity } from '../../external/domain/external-identity.entity.js';
+import { ExternalIdentity } from './external-identity.entity.js';
 
 @Entity('users')
 export class User {
@@ -19,7 +18,12 @@ export class User {
   @Column({ type: 'varchar', length: 255 })
   email: string;
 
-  @Column({ type: 'varchar', length: 255, name: 'password_hash', nullable: true })
+  @Column({
+    type: 'varchar',
+    length: 255,
+    name: 'password_hash',
+    nullable: true,
+  })
   passwordHash: string | null;
 
   @Column({ type: 'varchar', length: 255, name: 'first_name', nullable: true })
@@ -28,14 +32,16 @@ export class User {
   @Column({ type: 'varchar', length: 255, name: 'last_name', nullable: true })
   lastName: string | null;
 
-  @Column({ type: 'varchar', length: 255, name: 'display_name', nullable: true })
+  @Column({
+    type: 'varchar',
+    length: 255,
+    name: 'display_name',
+    nullable: true,
+  })
   displayName: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
-
-  @OneToMany(() => RefreshToken, (token) => token.user)
-  refreshTokens: Relation<RefreshToken[]>;
 
   @OneToMany(() => ExternalIdentity, (identity) => identity.user)
   externalIdentities: Relation<ExternalIdentity[]>;

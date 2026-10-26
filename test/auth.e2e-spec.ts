@@ -1,9 +1,10 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import type { App } from 'supertest/types.js';
 import { randomUUID } from 'node:crypto';
-import { AppModule } from '../src/features/app.module.js';
+import { AppModule } from '../src/app.module.js';
 import { isDatabaseAvailable } from './db-available.js';
 
 const dbAvailable = await isDatabaseAvailable();
@@ -19,6 +20,7 @@ describe.skipIf(!dbAvailable)('Auth (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.use(cookieParser());
     await app.init();
   });
 

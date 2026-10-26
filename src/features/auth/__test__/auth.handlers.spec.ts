@@ -14,12 +14,17 @@ const SESSION = {
   refreshToken: 'refresh',
 };
 
-function createUsersRepositoryMock() {
+function createUsersServiceMock() {
   return {
-    findByEmail: vi.fn(),
     findById: vi.fn(),
-    create: vi.fn(),
-    save: vi.fn(),
+    findByEmail: vi.fn(),
+    registerWithPassword: vi.fn(),
+  };
+}
+
+function createLinkedAccountsMock() {
+  return {
+    findByUserId: vi.fn(),
   };
 }
 
@@ -28,10 +33,10 @@ function createSessionServiceMock() {
 }
 
 describe('RegisterHandler', () => {
-  const usersRepository = createUsersRepositoryMock();
+  const usersService = createUsersServiceMock();
   const sessionService = createSessionServiceMock();
   const handler = new RegisterHandler(
-    usersRepository as never,
+    usersService as never,
     new PasswordService(),
     sessionService as never,
   );
@@ -42,23 +47,20 @@ describe('RegisterHandler', () => {
   });
 
   it('creates a user with a hashed password and starts a session', async () => {
-    usersRepository.findByEmail.mockResolvedValue(null);
-    usersRepository.create.mockImplementation(
-      async (data: { email: string; passwordHash: string }) => ({
-        id: 'user-1',
-        ...data,
-      }),
-    );
+    usersService.registerWithPassword.mockResolvedValue({
+      id: 'user-1',
+      email: 'test@example.com',
+    });
 
     const result = await handler.execute(
       new RegisterCommand('Test@Example.com', 'password123'),
     );
 
-    expect(usersRepository.create).toHaveBeenCalledWith({
-      email: 'test@example.com',
-      passwordHash: expect.any(String),
-    });
-    const { passwordHash } = usersRepository.create.mock.calls[0][0];
+    expect(usersService.registerWithPassword).toHaveBeenCalledWith(
+      'test@example.com',
+      expect.any(String),
+    );
+    const passwordHash = usersService.registerWithPassword.mock.calls[0][1];
     expect(passwordHash).not.toBe('password123');
     expect(await bcrypt.compare('password123', passwordHash)).toBe(true);
     expect(sessionService.start).toHaveBeenCalledWith(
@@ -69,37 +71,30 @@ describe('RegisterHandler', () => {
   });
 
   it('rejects an already registered email', async () => {
-    usersRepository.findByEmail.mockResolvedValue({
-      id: 'user-1',
-      passwordHash: 'hashed-password',
-    });
+    usersService.registerWithPassword.mockRejectedValue(
+      new ConflictException('Email is already registered'),
+    );
 
     await expect(
       handler.execute(new RegisterCommand('a@b.c', 'password123')),
     ).rejects.toThrow(ConflictException);
-    expect(usersRepository.create).not.toHaveBeenCalled();
-    expect(usersRepository.save).not.toHaveBeenCalled();
+    expect(sessionService.start).not.toHaveBeenCalled();
   });
 
-  it('attaches a password to an Authentik-created account and signs it in', async () => {
-    const authentikUser = {
+  it('signs in an account whose password was attached', async () => {
+    usersService.registerWithPassword.mockResolvedValue({
       id: 'user-9',
       email: 'a@b.c',
-      passwordHash: null,
-    };
-    usersRepository.findByEmail.mockResolvedValue(authentikUser);
-    usersRepository.save.mockImplementation(async (user: typeof authentikUser) => user);
+    });
 
     const result = await handler.execute(
       new RegisterCommand('A@B.C', 'password123'),
     );
 
-    expect(usersRepository.create).not.toHaveBeenCalled();
-    expect(usersRepository.save).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'user-9', email: 'a@b.c' }),
+    expect(usersService.registerWithPassword).toHaveBeenCalledWith(
+      'a@b.c',
+      expect.any(String),
     );
-    const saved = usersRepository.save.mock.calls[0][0];
-    expect(await bcrypt.compare('password123', saved.passwordHash)).toBe(true);
     expect(sessionService.start).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'user-9', email: 'a@b.c' }),
       {},
@@ -109,10 +104,10 @@ describe('RegisterHandler', () => {
 });
 
 describe('LoginHandler', () => {
-  const usersRepository = createUsersRepositoryMock();
+  const usersService = createUsersServiceMock();
   const sessionService = createSessionServiceMock();
   const handler = new LoginHandler(
-    usersRepository as never,
+    usersService as never,
     new PasswordService(),
     sessionService as never,
   );
@@ -123,7 +118,7 @@ describe('LoginHandler', () => {
   });
 
   it('rejects unknown email', async () => {
-    usersRepository.findByEmail.mockResolvedValue(null);
+    usersService.findByEmail.mockResolvedValue(null);
 
     await expect(
       handler.execute(new LoginCommand('a@b.c', 'password123')),
@@ -132,7 +127,7 @@ describe('LoginHandler', () => {
   });
 
   it('rejects wrong password', async () => {
-    usersRepository.findByEmail.mockResolvedValue({
+    usersService.findByEmail.mockResolvedValue({
       id: 'user-1',
       email: 'a@b.c',
       passwordHash: await bcrypt.hash('correct-password', 4),
@@ -145,7 +140,7 @@ describe('LoginHandler', () => {
   });
 
   it('starts a session on valid credentials', async () => {
-    usersRepository.findByEmail.mockResolvedValue({
+    usersService.findByEmail.mockResolvedValue({
       id: 'user-1',
       email: 'a@b.c',
       passwordHash: await bcrypt.hash('password123', 4),
@@ -164,22 +159,20 @@ describe('LoginHandler', () => {
 });
 
 describe('GetCurrentUserHandler', () => {
-  const usersRepository = createUsersRepositoryMock();
-  const identitiesRepository = {
-    findByUserId: vi.fn(),
-  };
+  const usersService = createUsersServiceMock();
+  const linkedAccounts = createLinkedAccountsMock();
   const handler = new GetCurrentUserHandler(
-    usersRepository as never,
-    identitiesRepository as never,
+    usersService as never,
+    linkedAccounts as never,
   );
 
   beforeEach(() => {
     vi.clearAllMocks();
-    identitiesRepository.findByUserId.mockResolvedValue([]);
+    linkedAccounts.findByUserId.mockResolvedValue([]);
   });
 
   it('returns the user with names and sign-in methods', async () => {
-    usersRepository.findById.mockResolvedValue({
+    usersService.findById.mockResolvedValue({
       id: 'user-1',
       email: 'a@b.c',
       passwordHash: 'hash',
@@ -187,7 +180,7 @@ describe('GetCurrentUserHandler', () => {
       lastName: 'Иванов',
       displayName: 'Иванов Иван',
     });
-    identitiesRepository.findByUserId.mockResolvedValue([
+    linkedAccounts.findByUserId.mockResolvedValue([
       { provider: 'authentik' },
       { provider: 'github' },
     ]);
@@ -205,7 +198,7 @@ describe('GetCurrentUserHandler', () => {
   });
 
   it('rejects when the user no longer exists', async () => {
-    usersRepository.findById.mockResolvedValue(null);
+    usersService.findById.mockResolvedValue(null);
 
     await expect(
       handler.execute(new GetCurrentUserQuery('user-1')),

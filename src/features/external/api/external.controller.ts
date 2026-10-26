@@ -15,21 +15,23 @@ import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { GetCurrentUserQuery } from '../../user/application/queries/get-current-user/get-current-user.query.js';
 import { SessionService } from '../../session/application/session.service.js';
-import type { AuthUser } from '../../../common/decorators/current-user.decorator.js';
-import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
-import { Public } from '../../../common/decorators/public.decorator.js';
+import type { AuthUser } from '../../../libs/common/decorators/current-user.decorator.js';
+import { CurrentUser } from '../../../libs/common/decorators/current-user.decorator.js';
+import { Public } from '../../../libs/common/decorators/public.decorator.js';
 import {
   frontendUrl,
   sessionMeta,
   setRefreshCookie,
-} from '../../../common/http/session-http.js';
+} from '../../session/api/session-http.js';
 import { User } from '../../user/domain/user.entity.js';
 import { ExternalAccountLinker } from '../application/external-account-linker.js';
-import { ExternalProvidersRegistry } from '../../provider/infrastructure/external-providers.registry.js';
+import { ExternalProvidersRegistry } from '../../../libs/providers/common/registry/external-providers.registry.js';
 import {
   ExternalAuthGuard,
+  ExternalLinkGuard,
   ExternalSyncGuard,
-} from '../../../common/guards/external-auth.guard.js';
+} from '../../../libs/common/guards/external-auth.guard.js';
+import { FrontendOriginGuard } from '../../../libs/common/guards/frontend-origin.guard.js';
 
 @Controller('auth')
 export class ExternalController {
@@ -49,20 +51,28 @@ export class ExternalController {
   }
 
   // Синхронизация профиля из провайдера. Профиль обновляется ТОЛЬКО при этом
-  // запросе (обычный вход данные не трогает). GET запускает OAuth-редирект к
-  // выбранному провайдеру (используется как ссылка в UI), затем callback сам
+  // запросе (обычный вход данные не трогает). Запрос перенаправляет к
+  // выбранному провайдеру (используется как форма в UI), затем callback сам
   // сохранит свежие данные.
+  //
+  // Только POST: по GET состояние менялось бы обычным переходом по ссылке,
+  // а refresh-cookie на кросс-сайтовом POST не отправляется (SameSite=Lax).
   @Public()
-  @Get('external/:provider/sync')
-  @UseGuards(ExternalSyncGuard)
-  startExternalProviderSyncGet() {
+  @Post('external/:provider/sync')
+  @HttpCode(302)
+  @UseGuards(FrontendOriginGuard, ExternalSyncGuard)
+  startExternalProviderSync() {
     // redirect к провайдеру выполняет guard
   }
 
-  @Post('external/:provider/sync')
+  // Явная привязка провайдера к текущему аккаунту: пользователь уже вошёл
+  // и подтвердил владение почтой у провайдера. Слияние аккаунтов по email
+  // при обычном входе запрещено (см. ExternalAccountLinker).
+  @Public()
+  @Post('external/:provider/link')
   @HttpCode(302)
-  @UseGuards(ExternalSyncGuard)
-  startExternalProviderSync() {
+  @UseGuards(FrontendOriginGuard, ExternalLinkGuard)
+  startExternalProviderLink() {
     // redirect к провайдеру выполняет guard
   }
 
@@ -102,7 +112,7 @@ export class ExternalController {
       user,
       sessionMeta(req, provider),
     );
-    setRefreshCookie(res, session.refreshToken, this.configService);
+    setRefreshCookie(res, session.refreshToken, req, this.configService);
     return res.redirect(frontendUrl(this.configService));
   }
 

@@ -11,23 +11,21 @@ import {
 import { CommandBus, QueryBus } from '@nestjs/cqrs';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
-import {
-  REFRESH_COOKIE,
-  REFRESH_COOKIE_PATH,
-} from '../../../constants/session.constants.js';
-import { LogoutCommand } from '../application/commands/logout/logout.command.js';
+import { REFRESH_COOKIE } from '../../../libs/consts/session.constants.js';
 import { LogoutAllCommand } from '../application/commands/logout-all/logout-all.command.js';
 import { RevokeSessionCommand } from '../application/commands/revoke-session/revoke-session.command.js';
 import { ListSessionsQuery } from '../application/queries/list-sessions/list-sessions.query.js';
-import { RefreshCommand } from '../application/commands/refresh/refresh.command.js';
+import { SessionLogoutService } from '../application/session-logout.service.js';
 import { TokensService } from '../application/tokens.service.js';
-import { RefreshTokensRepository } from '../repository/refresh-tokens.repository.js';
-import type { AuthUser } from '../../../common/decorators/current-user.decorator.js';
-import { CurrentUser } from '../../../common/decorators/current-user.decorator.js';
-import { Public } from '../../../common/decorators/public.decorator.js';
-import { frontendUrl, sessionResponse } from '../../../common/http/session-http.js';
-import { ExternalProvidersRegistry } from '../../provider/infrastructure/external-providers.registry.js';
+import type { AuthUser } from '../../../libs/common/decorators/current-user.decorator.js';
+import { CurrentUser } from '../../../libs/common/decorators/current-user.decorator.js';
+import { clearRefreshCookie, frontendUrl } from './session-http.js';
 
+/**
+ * Управление сессиями: список устройств, отзыв одной сессии, «завершить
+ * другие» и выход со всех устройств. Вход, refresh и logout текущей сессии
+ * живут в auth.
+ */
 @Controller('auth')
 export class SessionController {
   constructor(
@@ -35,40 +33,8 @@ export class SessionController {
     private readonly queryBus: QueryBus,
     private readonly configService: ConfigService,
     private readonly tokensService: TokensService,
-    private readonly refreshTokensRepository: RefreshTokensRepository,
-    private readonly providersRegistry: ExternalProvidersRegistry,
+    private readonly sessionLogoutService: SessionLogoutService,
   ) {}
-
-  @Public()
-  @Post('refresh')
-  @HttpCode(200)
-  async refresh(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const session = await this.commandBus.execute(
-      new RefreshCommand(req.cookies?.[REFRESH_COOKIE]),
-    );
-    return sessionResponse(session, res, this.configService);
-  }
-
-  @Public()
-  @Post('logout')
-  @HttpCode(200)
-  async logout(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    // Провайдер берём из текущей сессии (каким способом вошли), а не из query.
-    const logoutUrl = await this.sessionProviderLogoutUrl(req);
-    const result = await this.commandBus.execute(
-      new LogoutCommand(req.cookies?.[REFRESH_COOKIE]),
-    );
-    res.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
-    // RP-initiated logout: если текущая сессия из OIDC-провайдера, отдаём URL
-    // для выхода и из его SSO-сессии (фронт перейдёт по нему).
-    return { ...result, logoutUrl };
-  }
 
   // Выход со ВСЕХ устройств: отзывает все refresh-сессии пользователя.
   @Post('logout/all')
@@ -78,11 +44,14 @@ export class SessionController {
     @Res({ passthrough: true }) res: Response,
     @Req() req: Request,
   ) {
-    const logoutUrl = await this.sessionProviderLogoutUrl(req);
+    const logoutUrl = await this.sessionLogoutService.providerLogoutUrl(
+      req.cookies?.[REFRESH_COOKIE],
+      frontendUrl(this.configService),
+    );
     const result = await this.commandBus.execute(
       new LogoutAllCommand(user.id, await this.currentJti(req)),
     );
-    res.clearCookie(REFRESH_COOKIE, { path: REFRESH_COOKIE_PATH });
+    clearRefreshCookie(res, req, this.configService);
     return { ...result, logoutUrl };
   }
 
@@ -121,30 +90,5 @@ export class SessionController {
     }
     const payload = await this.tokensService.verifyRefresh(token);
     return payload?.jti;
-  }
-
-  /** URL выхода из SSO-сессии провайдера (если поддерживается). */
-  private providerLogoutUrl(provider?: string | null): string | null {
-    if (!provider || !this.providersRegistry.has(provider)) {
-      return null;
-    }
-    return (
-      this.providersRegistry
-        .require(provider)
-        .logoutUrl?.(frontendUrl(this.configService)) ?? null
-    );
-  }
-
-  /**
-   * URL SSO-выхода для ТЕКУЩЕЙ сессии: определяем, каким способом она была
-   * создана (provider из refresh_tokens), и берём logoutUrl этого провайдера.
-   */
-  private async sessionProviderLogoutUrl(req: Request): Promise<string | null> {
-    const jti = await this.currentJti(req);
-    if (!jti) {
-      return null;
-    }
-    const provider = await this.refreshTokensRepository.findProviderById(jti);
-    return this.providerLogoutUrl(provider);
   }
 }
