@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -8,6 +9,20 @@ import { EmailAlreadyRegisteredException } from '../../../libs/common/exceptions
 import { User } from '../domain/user.entity.js';
 import { UsersRepository } from '../infrastructure/repository/users.repository.js';
 import { LinkedAccountsService } from './linked-accounts.service.js';
+
+/** Поля профиля, которые пользователь может менять самостоятельно. */
+export interface ProfileChanges {
+  firstName?: string | null;
+  lastName?: string | null;
+  middleName?: string | null;
+  organization?: string | null;
+  position?: string | null;
+}
+
+function normalizeOptional(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed ? trimmed : null;
+}
 
 /**
  * Прикладной сервис пользователей — единственная точка входа в аккаунты для
@@ -77,6 +92,81 @@ export class UsersService {
     }
 
     user.passwordHash = passwordHash;
+    return this.save(user);
+  }
+
+  /**
+   * Смена существующего пароля. Проверка текущего пароля — в auth-модуле:
+   * домен пользователей не должен зависеть от bcrypt и формата хэша.
+   */
+  async changePassword(userId: string, passwordHash: string): Promise<User> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Требуется вход в аккаунт');
+    }
+    if (!user.passwordHash) {
+      throw new BadRequestException('Пароль ещё не установлен');
+    }
+
+    user.passwordHash = passwordHash;
+    return this.save(user);
+  }
+
+  /**
+   * Подтверждение номера телефона. Отправка кода не выполняется: сервис
+   * работает в условном режиме, поэтому номер сразу считается подтверждённым.
+   * Без этого флага редактирование профиля запрещено.
+   */
+  async confirmPhone(userId: string, phone: string): Promise<User> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Требуется вход в аккаунт');
+    }
+
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 10 || digits.length > 15) {
+      throw new BadRequestException('Введите корректный номер телефона');
+    }
+
+    user.phone = phone.trim();
+    user.phoneVerifiedAt = new Date();
+    return this.save(user);
+  }
+
+  /**
+   * Редактирование личных данных. Пока телефон не подтверждён, менять
+   * профиль нельзя — проверка дублируется на сервере, а не только в UI.
+   */
+  async updateProfile(
+    userId: string,
+    changes: ProfileChanges,
+  ): Promise<User> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('Требуется вход в аккаунт');
+    }
+    if (!user.phoneVerifiedAt) {
+      throw new ForbiddenException(
+        'Подтвердите номер телефона, чтобы редактировать профиль',
+      );
+    }
+
+    if (changes.firstName !== undefined) {
+      user.firstName = normalizeOptional(changes.firstName);
+    }
+    if (changes.lastName !== undefined) {
+      user.lastName = normalizeOptional(changes.lastName);
+    }
+    if (changes.middleName !== undefined) {
+      user.middleName = normalizeOptional(changes.middleName);
+    }
+    if (changes.organization !== undefined) {
+      user.organization = normalizeOptional(changes.organization);
+    }
+    if (changes.position !== undefined) {
+      user.position = normalizeOptional(changes.position);
+    }
+
     return this.save(user);
   }
 

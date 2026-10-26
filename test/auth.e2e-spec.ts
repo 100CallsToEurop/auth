@@ -89,6 +89,61 @@ describe.skipIf(!dbAvailable)('Auth (e2e)', () => {
     await request(app.getHttpServer()).get('/auth/me').expect(401);
   });
 
+  it('edits the profile only after the phone is confirmed', async () => {
+    const profileEmail = `e2e-profile-${randomUUID().slice(0, 8)}@example.com`;
+    const registration = await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({ email: profileEmail, password })
+      .expect(201);
+    const authorization = `Bearer ${registration.body.accessToken}`;
+
+    // Без подтверждения телефона сервер отклоняет изменение профиля.
+    const forbidden = await request(app.getHttpServer())
+      .patch('/auth/profile')
+      .set('Authorization', authorization)
+      .send({ firstName: 'Иван' })
+      .expect(403);
+
+    expect(forbidden.body.message).toContain('Подтвердите номер телефона');
+
+    const confirmed = await request(app.getHttpServer())
+      .post('/auth/profile/phone/confirm')
+      .set('Authorization', authorization)
+      .send({ phone: '+7 (999) 123-45-67' })
+      .expect(200);
+
+    expect(confirmed.body.phone).toBe('+7 (999) 123-45-67');
+    expect(confirmed.body.phoneVerified).toBe(true);
+
+    const updated = await request(app.getHttpServer())
+      .patch('/auth/profile')
+      .set('Authorization', authorization)
+      .send({
+        firstName: 'Иван',
+        lastName: 'Иванов',
+        middleName: 'Иванович',
+        organization: 'ООО «Ромашка»',
+        position: 'Инженер',
+      })
+      .expect(200);
+
+    expect(updated.body).toMatchObject({
+      firstName: 'Иван',
+      lastName: 'Иванов',
+      middleName: 'Иванович',
+      organization: 'ООО «Ромашка»',
+      position: 'Инженер',
+      phoneVerified: true,
+    });
+
+    const me = await request(app.getHttpServer())
+      .get('/auth/me')
+      .set('Authorization', authorization)
+      .expect(200);
+
+    expect(me.body.organization).toBe('ООО «Ромашка»');
+  });
+
   it('rotates the refresh token', async () => {
     const login = await request(app.getHttpServer())
       .post('/auth/login')
@@ -328,12 +383,26 @@ describe.skipIf(!dbAvailable)('Auth (e2e)', () => {
         .send({ email: ssoEmail, password: 'profile-password-123' })
         .expect(200);
 
-      // Смена существующего пароля — отдельный сценарий, здесь запрещена.
+      // Смена пароля требует текущий пароль.
       await request(app.getHttpServer())
         .put('/auth/password')
         .set('Authorization', `Bearer ${session.accessToken}`)
         .send({ password: 'another-password-123' })
         .expect(400);
+
+      await request(app.getHttpServer())
+        .put('/auth/password')
+        .set('Authorization', `Bearer ${session.accessToken}`)
+        .send({
+          currentPassword: 'profile-password-123',
+          password: 'another-password-123',
+        })
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({ email: ssoEmail, password: 'another-password-123' })
+        .expect(200);
     });
 
     it('не даёт создать пароль без входа в аккаунт', async () => {

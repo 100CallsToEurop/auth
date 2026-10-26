@@ -32,6 +32,25 @@ export class User {
   @Column({ type: 'varchar', length: 255, name: 'last_name', nullable: true })
   lastName: string | null;
 
+  @Column({ type: 'varchar', length: 255, name: 'middle_name', nullable: true })
+  middleName: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  organization: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  position: string | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  phone: string | null;
+
+  @Column({
+    type: 'timestamptz',
+    name: 'phone_verified_at',
+    nullable: true,
+  })
+  phoneVerifiedAt: Date | null;
+
   @Column({
     type: 'varchar',
     length: 255,

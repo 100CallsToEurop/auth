@@ -14,6 +14,11 @@ export interface SessionUserInput {
   email: string;
   firstName?: string | null;
   lastName?: string | null;
+  middleName?: string | null;
+  organization?: string | null;
+  position?: string | null;
+  phone?: string | null;
+  phoneVerifiedAt?: Date | null;
   displayName?: string | null;
 }
 
@@ -35,6 +40,11 @@ interface SessionResponse {
     email: string;
     firstName: string | null;
     lastName: string | null;
+    middleName: string | null;
+    organization: string | null;
+    position: string | null;
+    phone: string | null;
+    phoneVerified: boolean;
     displayName: string | null;
   };
   accessToken: string;
@@ -91,6 +101,11 @@ export class SessionService {
         email: user.email,
         firstName: user.firstName ?? null,
         lastName: user.lastName ?? null,
+        middleName: user.middleName ?? null,
+        organization: user.organization ?? null,
+        position: user.position ?? null,
+        phone: user.phone ?? null,
+        phoneVerified: user.phoneVerifiedAt != null,
         displayName: user.displayName ?? null,
       },
       accessToken,

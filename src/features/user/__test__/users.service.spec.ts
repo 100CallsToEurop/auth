@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { EmailAlreadyRegisteredException } from '../../../libs/common/exceptions/email-already-registered.exception.js';
 import { UsersService } from '../application/users.service.js';
 
@@ -149,6 +149,114 @@ describe('UsersService', () => {
       await expect(service.setPassword('user-1', 'new-hash')).rejects.toThrow(
         BadRequestException,
       );
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changePassword', () => {
+    it('replaces the hash when a password already exists', async () => {
+      const user = {
+        id: 'user-1',
+        email: 'a@b.c',
+        passwordHash: 'old-hash',
+      };
+      repository.findById.mockResolvedValue(user);
+      repository.save.mockImplementation(async (value: unknown) => value);
+
+      await service.changePassword('user-1', 'new-hash');
+
+      expect(user.passwordHash).toBe('new-hash');
+      expect(repository.save).toHaveBeenCalledWith(user);
+    });
+
+    it('rejects when the password has not been created yet', async () => {
+      repository.findById.mockResolvedValue({
+        id: 'user-1',
+        email: 'a@b.c',
+        passwordHash: null,
+      });
+
+      await expect(
+        service.changePassword('user-1', 'new-hash'),
+      ).rejects.toThrow(BadRequestException);
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('confirmPhone', () => {
+    it('stores the phone and marks it as verified', async () => {
+      const user = {
+        id: 'user-1',
+        email: 'a@b.c',
+        phone: null,
+        phoneVerifiedAt: null,
+      };
+      repository.findById.mockResolvedValue(user);
+      repository.save.mockImplementation(async (value: unknown) => value);
+
+      await service.confirmPhone('user-1', ' +7 (999) 123-45-67 ');
+
+      expect(user.phone).toBe('+7 (999) 123-45-67');
+      expect(user.phoneVerifiedAt).toBeInstanceOf(Date);
+      expect(repository.save).toHaveBeenCalledWith(user);
+    });
+
+    it('rejects a phone with too few digits', async () => {
+      repository.findById.mockResolvedValue({
+        id: 'user-1',
+        email: 'a@b.c',
+      });
+
+      await expect(service.confirmPhone('user-1', '123')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(repository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateProfile', () => {
+    it('updates the profile after phone verification', async () => {
+      const user = {
+        id: 'user-1',
+        email: 'a@b.c',
+        phoneVerifiedAt: new Date(),
+        firstName: null,
+        lastName: null,
+        middleName: null,
+        organization: null,
+        position: null,
+      };
+      repository.findById.mockResolvedValue(user);
+      repository.save.mockImplementation(async (value: unknown) => value);
+
+      await service.updateProfile('user-1', {
+        firstName: ' Иван ',
+        lastName: 'Иванов',
+        middleName: 'Иванович',
+        organization: ' ООО «Ромашка» ',
+        position: 'Инженер',
+      });
+
+      expect(user).toMatchObject({
+        firstName: 'Иван',
+        lastName: 'Иванов',
+        middleName: 'Иванович',
+        organization: 'ООО «Ромашка»',
+        position: 'Инженер',
+      });
+      expect(repository.save).toHaveBeenCalledWith(user);
+    });
+
+    it('does not allow editing before the phone is verified', async () => {
+      repository.findById.mockResolvedValue({
+        id: 'user-1',
+        email: 'a@b.c',
+        phoneVerifiedAt: null,
+      });
+
+      await expect(
+        service.updateProfile('user-1', { firstName: 'Иван' }),
+      ).rejects.toThrow(ForbiddenException);
       expect(repository.save).not.toHaveBeenCalled();
     });
   });

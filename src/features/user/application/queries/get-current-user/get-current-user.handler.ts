@@ -29,6 +29,11 @@ export class GetCurrentUserHandler implements IQueryHandler<GetCurrentUserQuery>
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      middleName: user.middleName,
+      organization: user.organization,
+      position: user.position,
+      phone: user.phone,
+      phoneVerified: user.phoneVerifiedAt != null,
       displayName: user.displayName,
       providers: [...providers],
     };

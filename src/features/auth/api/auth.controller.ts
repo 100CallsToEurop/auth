@@ -99,7 +99,7 @@ export class AuthController {
     @Body() dto: SetPasswordDto,
   ) {
     await this.commandBus.execute(
-      new SetPasswordCommand(user.id, dto.password),
+      new SetPasswordCommand(user.id, dto.password, dto.currentPassword),
     );
     return this.queryBus.execute(new GetCurrentUserQuery(user.id));
   }

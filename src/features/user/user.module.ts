@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { CqrsModule } from '@nestjs/cqrs';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfirmPhoneHandler } from './application/commands/confirm-phone/confirm-phone.handler.js';
+import { UpdateProfileHandler } from './application/commands/update-profile/update-profile.handler.js';
 import { GetCurrentUserHandler } from './application/queries/get-current-user/get-current-user.handler.js';
 import { LinkedAccountsService } from './application/linked-accounts.service.js';
 import { UsersService } from './application/users.service.js';
@@ -20,6 +22,8 @@ import { UsersRepository } from './infrastructure/repository/users.repository.js
   controllers: [UserController],
   providers: [
     GetCurrentUserHandler,
+    UpdateProfileHandler,
+    ConfirmPhoneHandler,
     UsersRepository,
     UsersService,
     ExternalIdentitiesRepository,

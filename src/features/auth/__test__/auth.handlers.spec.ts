@@ -1,4 +1,8 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 import { AttachPasswordCommand } from '../application/commands/attach-password/attach-password.command.js';
 import { AttachPasswordHandler } from '../application/commands/attach-password/attach-password.handler.js';
@@ -24,6 +28,7 @@ function createUsersServiceMock() {
     findByEmail: vi.fn(),
     registerWithPassword: vi.fn(),
     setPassword: vi.fn(),
+    changePassword: vi.fn(),
     attachPasswordToProviderAccount: vi.fn(),
   };
 }
@@ -120,7 +125,12 @@ describe('SetPasswordHandler', () => {
     vi.clearAllMocks();
   });
 
-  it('hashes the password and stores it for the current user', async () => {
+  it('creates a password when the account has none', async () => {
+    usersService.findById.mockResolvedValue({
+      id: 'user-1',
+      email: 'a@b.c',
+      passwordHash: null,
+    });
     usersService.setPassword.mockResolvedValue({
       id: 'user-1',
       email: 'a@b.c',
@@ -135,6 +145,57 @@ describe('SetPasswordHandler', () => {
     const passwordHash = usersService.setPassword.mock.calls[0][1];
     expect(passwordHash).not.toBe('password123');
     expect(await bcrypt.compare('password123', passwordHash)).toBe(true);
+  });
+
+  it('changes an existing password after checking the current one', async () => {
+    usersService.findById.mockResolvedValue({
+      id: 'user-1',
+      email: 'a@b.c',
+      passwordHash: await bcrypt.hash('old-password', 4),
+    });
+    usersService.changePassword.mockResolvedValue({
+      id: 'user-1',
+      email: 'a@b.c',
+    });
+
+    await handler.execute(
+      new SetPasswordCommand('user-1', 'new-password-123', 'old-password'),
+    );
+
+    expect(usersService.changePassword).toHaveBeenCalledWith(
+      'user-1',
+      expect.any(String),
+    );
+    const passwordHash = usersService.changePassword.mock.calls[0][1];
+    expect(await bcrypt.compare('new-password-123', passwordHash)).toBe(true);
+  });
+
+  it('rejects an incorrect current password', async () => {
+    usersService.findById.mockResolvedValue({
+      id: 'user-1',
+      email: 'a@b.c',
+      passwordHash: await bcrypt.hash('old-password', 4),
+    });
+
+    await expect(
+      handler.execute(
+        new SetPasswordCommand('user-1', 'new-password-123', 'wrong-password'),
+      ),
+    ).rejects.toThrow(BadRequestException);
+    expect(usersService.changePassword).not.toHaveBeenCalled();
+  });
+
+  it('requires the current password when one already exists', async () => {
+    usersService.findById.mockResolvedValue({
+      id: 'user-1',
+      email: 'a@b.c',
+      passwordHash: await bcrypt.hash('old-password', 4),
+    });
+
+    await expect(
+      handler.execute(new SetPasswordCommand('user-1', 'new-password-123')),
+    ).rejects.toThrow(BadRequestException);
+    expect(usersService.changePassword).not.toHaveBeenCalled();
   });
 });
 
@@ -265,6 +326,11 @@ describe('GetCurrentUserHandler', () => {
       passwordHash: 'hash',
       firstName: 'Иван',
       lastName: 'Иванов',
+      middleName: 'Иванович',
+      organization: 'ООО «Ромашка»',
+      position: 'Инженер',
+      phone: '+7 999 123-45-67',
+      phoneVerifiedAt: new Date('2026-10-26T10:00:00.000Z'),
       displayName: 'Иванов Иван',
     });
     linkedAccounts.findByUserId.mockResolvedValue([
@@ -279,6 +345,11 @@ describe('GetCurrentUserHandler', () => {
       email: 'a@b.c',
       firstName: 'Иван',
       lastName: 'Иванов',
+      middleName: 'Иванович',
+      organization: 'ООО «Ромашка»',
+      position: 'Инженер',
+      phone: '+7 999 123-45-67',
+      phoneVerified: true,
       displayName: 'Иванов Иван',
       providers: ['authentik', 'github', 'password'],
     });
