@@ -117,6 +117,41 @@ describe('ProviderAuthController', () => {
     },
   );
 
+  it('redirects a browser login to the frontend with the access token', async () => {
+    const req = createRequest();
+    req.headers.accept =
+      'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8';
+    const { res, cookie, redirect } = createResponse();
+    configService.get.mockImplementation((key: string) =>
+      key === 'FRONTEND_URL' ? 'https://front.example.com' : undefined,
+    );
+
+    await expect(
+      controller.githubAuthCallback(req, res),
+    ).resolves.toBeUndefined();
+
+    expect(cookie).toHaveBeenCalledWith(
+      'refresh_token',
+      'refresh-token',
+      expect.objectContaining({ httpOnly: true }),
+    );
+    expect(redirect).toHaveBeenCalledWith(
+      'https://front.example.com/#access_token=access-token',
+    );
+  });
+
+  it('returns JSON to API clients that do not accept HTML', async () => {
+    const req = createRequest();
+    req.headers.accept = '*/*';
+    const { res, redirect } = createResponse();
+
+    await expect(controller.githubAuthCallback(req, res)).resolves.toEqual({
+      accessToken: 'access-token',
+    });
+
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
   it('lists available providers', () => {
     const providers = [{ slug: 'github', displayName: 'GitHub' }];
     providersRegistry.list.mockReturnValueOnce(providers);

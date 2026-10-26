@@ -39,6 +39,7 @@ import {
 import { ExternalProvidersRegistry } from '../../../libs/providers/common/registry/external-providers.registry.js';
 import { GetCurrentUserQuery } from '../../user/application/queries/get-current-user/get-current-user.query.js';
 import {
+  frontendLoginUrl,
   frontendUrl,
   sessionMeta,
   setRefreshCookie,
@@ -53,12 +54,28 @@ type ProviderFlowRequest = Request & {
 };
 
 /**
+ * Callback открыт браузером (переход после OAuth), а не вызван API-клиентом.
+ * Браузер при навигации присылает Accept с text/html и Sec-Fetch-Mode:
+ * navigate, а fetch/curl — заголовок Accept со звёздочкой.
+ */
+function isBrowserNavigation(req: Request): boolean {
+  const accept = req.headers.accept;
+  const fetchMode = req.headers['sec-fetch-mode'];
+  return (
+    (typeof accept === 'string' && accept.includes('text/html')) ||
+    fetchMode === 'navigate'
+  );
+}
+
+/**
  * Все маршруты внешних провайдеров — отдельные для каждого провайдера:
  * вход, привязка, синхронизация профиля и отвязка.
  *
- * Callback обычного входа возвращает accessToken в теле, а refreshToken
- * кладёт в httpOnly-cookie. Этот же callback обслуживает привязку и
- * синхронизацию профиля: после них браузер возвращается на фронтенд.
+ * Callback обычного входа возвращает accessToken в теле (для API-клиентов),
+ * а при открытии callback браузером — редиректит на фронтенд с токеном во
+ * фрагменте URL. RefreshToken в обоих случаях кладётся в httpOnly-cookie.
+ * Этот же callback обслуживает привязку и синхронизацию профиля: после них
+ * браузер возвращается на фронтенд.
  */
 @Controller('auth')
 export class ProviderAuthController {
@@ -240,9 +257,10 @@ export class ProviderAuthController {
   /**
    * Завершает OAuth-flow: выдаёт сессию и ставит refresh-cookie.
    *
-   * Обычный вход отдаёт accessToken в теле (для API-клиентов). Привязка и
-   * синхронизация профиля запускаются из браузера, поэтому после них
-   * возвращаем пользователя на фронтенд.
+   * Привязка и синхронизация профиля запускаются из браузера — после них
+   * возвращаем пользователя на фронтенд. Обычный вход из SPA тоже
+   * возвращает браузер на фронтенд, но с accessToken во фрагменте URL.
+   * Остальные клиенты получают accessToken в теле ответа.
    */
   private async complete(
     req: Request,
@@ -262,8 +280,14 @@ export class ProviderAuthController {
     );
     setRefreshCookie(res, session.refreshToken, req, this.configService);
 
-    if ((req as ProviderFlowRequest).externalAction) {
+    const flow = req as ProviderFlowRequest;
+    if (flow.externalAction) {
       res.redirect(frontendUrl(this.configService));
+      return;
+    }
+
+    if (isBrowserNavigation(req)) {
+      res.redirect(frontendLoginUrl(this.configService, session.accessToken));
       return;
     }
 
